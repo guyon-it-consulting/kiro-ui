@@ -4,6 +4,10 @@ A browser-based chat interface for [Kiro CLI](https://kiro.dev/cli/), connected 
 
 ![Dark theme](https://img.shields.io/badge/theme-dark%20%2F%20light-9046ff) ![Tests](https://img.shields.io/badge/tests-140%20passing-34d399) ![Coverage](https://img.shields.io/badge/coverage-84%25-34d399)
 
+<p align="center">
+  <img src="docs/guide/tour.gif" alt="Kiro UI Demo" width="720">
+</p>
+
 ## Why Kiro UI?
 
 Kiro CLI is powerful — but the terminal isn't for everyone. Kiro UI gives developers and teams a visual, real-time interface to Kiro's agentic capabilities without sacrificing any of the power.

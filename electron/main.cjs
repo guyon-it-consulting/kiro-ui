@@ -1,18 +1,18 @@
 // Electron main process for Kiro UI
 const { app, BrowserWindow, shell, nativeTheme } = require('electron');
 const { join } = require('path');
-const { fork } = require('child_process');
+const { fork, execSync } = require('child_process');
+const fs = require('fs');
 
 const isDev = !app.isPackaged;
-let store = null;
 
-// Lazy-load electron-store (ESM module)
-async function getStore() {
-  if (!store) {
-    const { default: Store } = await import('electron-store');
-    store = new Store({ name: 'window-state' });
-  }
-  return store;
+// Simple JSON file store (no keychain access)
+const stateFile = join(app.getPath('userData'), 'window-state.json');
+function loadState() {
+  try { return JSON.parse(fs.readFileSync(stateFile, 'utf8')); } catch { return {}; }
+}
+function saveState(data) {
+  try { fs.writeFileSync(stateFile, JSON.stringify(data)); } catch {}
 }
 
 let mainWindow = null;
@@ -34,31 +34,60 @@ app.on('second-instance', () => {
 });
 
 // --- Window state ---
-async function getWindowState() {
-  const s = await getStore();
-  return s.get('windowBounds', { width: 1200, height: 800 });
+function getWindowState() {
+  const state = loadState();
+  return state.windowBounds || { width: 1200, height: 800 };
 }
 
-async function saveWindowState() {
+function saveWindowState() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  const s = await getStore();
+  const state = loadState();
   if (!mainWindow.isMaximized() && !mainWindow.isMinimized()) {
-    s.set('windowBounds', mainWindow.getBounds());
+    state.windowBounds = mainWindow.getBounds();
   }
-  s.set('isMaximized', mainWindow.isMaximized());
+  state.isMaximized = mainWindow.isMaximized();
+  saveState(state);
+}
+
+// --- Kill stale process on port ---
+function killProcessOnPort(port) {
+  try {
+    let pid;
+    if (process.platform === 'win32') {
+      const out = execSync(`netstat -ano | findstr :${port} | findstr LISTENING`, { encoding: 'utf8' });
+      pid = out.trim().split(/\s+/).pop();
+    } else {
+      pid = execSync(`lsof -ti:${port}`, { encoding: 'utf8' }).trim();
+    }
+    if (pid) {
+      if (process.platform === 'win32') {
+        execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' });
+      } else {
+        process.kill(Number(pid), 'SIGKILL');
+      }
+      // Brief wait for OS to release the port
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+    }
+  } catch { /* no process on port, that's fine */ }
 }
 
 // --- Server management ---
 function startServer() {
   return new Promise((resolve, reject) => {
+    killProcessOnPort(SERVER_PORT);
+
     const serverScript = isDev
       ? join(__dirname, '..', 'server.ts')
-      : join(__dirname, '..', 'server.js');
+      : join(process.resourcesPath, 'server.js');
+
+    const serverCwd = isDev
+      ? join(__dirname, '..')
+      : process.resourcesPath;
 
     const execArgv = isDev ? ['--import', 'tsx/esm', '--max-old-space-size=1024'] : ['--max-old-space-size=1024'];
 
     serverProcess = fork(serverScript, [], {
-      cwd: isDev ? join(__dirname, '..') : join(__dirname, '..'),
+      cwd: serverCwd,
       execArgv,
       env: {
         ...process.env,
@@ -116,8 +145,8 @@ function stopServer() {
 
 // --- Window creation ---
 async function createWindow() {
-  const bounds = await getWindowState();
-  const s = await getStore();
+  const bounds = getWindowState();
+  const state = loadState();
 
   mainWindow = new BrowserWindow({
     ...bounds,
@@ -136,7 +165,7 @@ async function createWindow() {
     },
   });
 
-  if (s.get('isMaximized')) mainWindow.maximize();
+  if (state.isMaximized) mainWindow.maximize();
 
   mainWindow.loadURL(`http://127.0.0.1:${SERVER_PORT}`);
 
@@ -173,17 +202,6 @@ async function createWindow() {
   });
 }
 
-// --- Auto-updater ---
-function setupAutoUpdater() {
-  if (isDev) return;
-  try {
-    const { autoUpdater } = require('electron-updater');
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
-  } catch { /* updater not configured */ }
-}
-
 // --- App lifecycle ---
 app.whenReady().then(async () => {
   try {
@@ -195,7 +213,7 @@ app.whenReady().then(async () => {
   }
 
   createWindow();
-  setupAutoUpdater();
+  // Auto-updater removed — was causing keychain prompts and errors with no published releases
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

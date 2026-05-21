@@ -276,6 +276,10 @@ export function App() {
         updateTab(tid, t => ({ ...t, isRunning: false }));
         addToast('Agent process crashed — restarting...', 'warning');
         break;
+      case 'AuthError':
+        updateTab(tid, t => ({ ...t, isRunning: false }));
+        addToast(data.message as string || 'Kiro CLI not authenticated. Run `kiro-cli login` in your terminal.', 'error');
+        break;
       case 'ProtocolLog':
         setProtocolLogs(l => [...l.slice(-200), { dir: data.dir as string, msg: data.msg as string, ts: Date.now() }]);
         break;

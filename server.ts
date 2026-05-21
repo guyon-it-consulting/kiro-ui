@@ -116,6 +116,7 @@ interface Session {
   permResolvers: Map<string, (r: acp.RequestPermissionResponse) => void>;
   permPolicy: PermPolicy;
   dead?: boolean;
+  authError?: boolean;
   setDebug: (v: boolean) => void;
 }
 
@@ -152,6 +153,7 @@ async function createSession(ws: WebSocket, loadSessionId?: string, tabId?: stri
   let socket: net.Socket | null = null;
   let inputStream: Writable;
   let outputStream: Readable;
+  let authError = false;
 
   if (transport.type === 'tcp') {
     socket = await connectTcp(transport.host, transport.port);
@@ -163,7 +165,13 @@ async function createSession(ws: WebSocket, loadSessionId?: string, tabId?: stri
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, NODE_OPTIONS: `--max-old-space-size=${getMaxChildMemMb()}` },
     });
-    proc.stderr?.on('data', () => {});
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      if (/not authenticated|not logged in|login required|unauthorized|auth.*fail/i.test(text)) {
+        authError = true;
+        emit(ws, { type: 'AuthError', tabId: t, message: 'Kiro CLI not authenticated. Run `kiro-cli login` in your terminal.' });
+      }
+    });
     proc.on('exit', () => activeProcs.delete(proc!));
     activeProcs.add(proc);
     inputStream = proc.stdin!;
@@ -261,6 +269,7 @@ async function createSession(ws: WebSocket, loadSessionId?: string, tabId?: stri
       if (socket) return socket.destroyed;
       return true;
     },
+    get authError() { return authError; },
     get permPolicy() { return permPolicy; },
     set permPolicy(v) { permPolicy = v; }
   };
@@ -290,6 +299,8 @@ wss.on('connection', async (ws) => {
     const onDisconnect = (code?: number | null) => {
       if (!tabs.has(tabId) || tabs.get(tabId) !== s) return;
       emit(ws, { type: 'AgentCrash', tabId, code });
+
+      if (s.authError) return; // Don't restart on auth failure
 
       const now = Date.now();
       if (now - windowStart > WINDOW_MS) { restarts = 0; windowStart = now; }

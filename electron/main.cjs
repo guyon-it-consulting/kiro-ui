@@ -6,6 +6,17 @@ const fs = require('fs');
 
 const isDev = !app.isPackaged;
 
+// Fix PATH when launched from Finder (GUI apps get minimal PATH on macOS/Linux)
+function fixPath() {
+  if (process.platform === 'win32') return;
+  try {
+    const shell = process.env.SHELL || '/bin/zsh';
+    const out = execSync(`${shell} -ilc 'echo $PATH'`, { encoding: 'utf8' }).trim();
+    if (out) process.env.PATH = out;
+  } catch {}
+}
+if (!isDev) fixPath();
+
 // Simple JSON file store (no keychain access)
 const stateFile = join(app.getPath('userData'), 'window-state.json');
 function loadState() {

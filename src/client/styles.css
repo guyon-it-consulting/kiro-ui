@@ -86,8 +86,9 @@ body.electron-mac header { padding-left: 78px; }
 /* Main */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--surface); }
 
-header { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px; background: var(--bg); }
+header { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px; background: var(--bg); -webkit-app-region: drag; }
 header h1 { font-size: 16px; font-weight: 700; letter-spacing: -0.4px; }
+header button, header select, header input, header a { -webkit-app-region: no-drag; }
 .header-divider { width: 1px; height: 20px; background: var(--border); }
 .selectors { display: flex; gap: 8px; margin-left: auto; align-items: center; }
 select { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); padding: 7px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; outline: none; transition: all 0.15s; }

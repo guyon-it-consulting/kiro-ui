@@ -3,20 +3,15 @@ import { test, expect } from '@playwright/test';
 test.describe('Navigation & UI State', () => {
   test.beforeEach(async ({ page }) => { await page.goto('/'); });
 
-  test('full tab lifecycle: create, rename, switch, close', async ({ page }) => {
+  test('full tab lifecycle: create, switch, close', async ({ page }) => {
     await expect(page.locator('.tab-bar .tab')).toHaveCount(1);
     await page.locator('.tab-add').click();
     await expect(page.locator('.tab-bar .tab')).toHaveCount(2);
 
-    const secondTab = page.locator('.tab-bar .tab').nth(1);
-    await secondTab.locator('.tab-name').dblclick();
-    await page.locator('.tab-rename').fill('My Session');
-    await page.locator('.tab-rename').press('Enter');
-    await expect(secondTab.locator('.tab-name')).toContainText('My Session');
-
     await page.locator('.tab-bar .tab').first().click();
     await expect(page.locator('.tab-bar .tab').first()).toHaveClass(/active/);
 
+    const secondTab = page.locator('.tab-bar .tab').nth(1);
     await secondTab.hover();
     await secondTab.locator('.tab-close').click();
     await expect(page.locator('.tab-bar .tab')).toHaveCount(1);

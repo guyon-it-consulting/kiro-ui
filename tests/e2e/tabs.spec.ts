@@ -20,11 +20,6 @@ test.describe('Tabs', () => {
     await expect(first).toHaveClass(/active/);
   });
 
-  test('double-click enables rename', async ({ page }) => {
-    await page.locator('.tab-name').first().dblclick();
-    await expect(page.locator('.tab-rename')).toBeVisible();
-  });
-
   test('close button on hover (with 2+ tabs)', async ({ page }) => {
     await page.locator('.tab-add').click();
     const tab = page.locator('.tab-bar .tab').first();

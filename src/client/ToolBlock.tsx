@@ -12,7 +12,8 @@ function fileLink(path: string, editor: EditorType) {
 export function ToolBlock({ tool, onToggle, editor }: { tool: ToolEntry; onToggle: () => void; editor: EditorType }) {
   const hasContent = !!(tool.content && tool.content.length > 0);
   const hasRaw = !!(tool.rawInput || tool.rawOutput);
-  const expandable = hasContent || hasRaw;
+  const hasStream = !!tool.streamOutput;
+  const expandable = hasContent || hasRaw || hasStream;
   const titleWithLink = () => {
     const t = tool.title || tool.kind || 'tool';
     const match = t.match(/^(.+?)(\s)(\/\S+|[^\s/]+\/\S+)$/);
@@ -27,6 +28,7 @@ export function ToolBlock({ tool, onToggle, editor }: { tool: ToolEntry; onToggl
         <span className={`tool-status ${tool.status}`}>{tool.status}</span>
       </div>
       {expandable && <div className="tool-body">
+        {hasStream && <pre className="tool-stream">{tool.streamOutput}</pre>}
         {hasContent && tool.content!.map((c, i) => c.type === 'diff' ? (
           <div key={i} className="diff">
             <div className="diff-path">{fileLink(c.path || '', editor)}</div>

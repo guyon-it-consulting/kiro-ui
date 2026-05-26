@@ -14,25 +14,31 @@ Provide a web/desktop UI alternative to the terminal for interacting with Kiro's
 ## Key Features
 
 - Real-time streaming chat with markdown rendering and syntax highlighting
-- Multi-tab sessions with independent kiro-cli processes per tab
-- Agent and model selection (session/set_mode, session/set_model)
-- Tool call visualization with collapsible diffs
+- Multi-tab sessions (tab = session, 1:1 mapping, auto-sync names)
+- Per-tab configuration: agent, model, permissions, effort level
+- Tool call visualization with collapsible diffs and real-time shell streaming
 - Permission prompts with configurable auto-approve policies and trust persistence
 - Thinking display with elapsed timer
+- Agent Plan visualization (pending/in_progress/completed task list)
 - Slash command autocomplete with dynamic subcommand options
-- Conversation history from ~/.kiro/sessions/cli/
+- Conversation branching via /rewind with timeline picker
+- Workspace-scoped session history with title filter
 - Cancel current turn (session/cancel)
 - Dark/light theme with persistence
 - Keyboard shortcuts (⌘N new, ⌘L clear, ⌘B sidebar, ⌘T new tab)
-- Copy code buttons and message actions (copy, retry)
-- Responsive collapsible sidebar
-- MCP server panel with live status
+- Message actions: copy, retry (on failure only), rewind
+- Enhanced message queue: reorder, merge, edit, delete, send now
+- MCP server panel with live status and OAuth flow
+- File follow-along panel (tracks files being edited in real-time)
 - Image & file attachments (paste, upload)
-- Context usage meter (pie chart)
+- Context usage meter with compact button (at 50%+)
+- Effort control dropdown (probes model support dynamically)
+- Voice input (Web Speech API, toggle mode)
+- Chat export to markdown
+- Agent description in empty state
 - Settings page (editor, workspace, trust rules, limits, agent settings, debug)
-- Protocol debug panel (raw JSON-RPC traffic)
+- Protocol debug panel (raw JSON-RPC traffic with ext notification logging)
 - Crash auto-reconnect with auto-restart
-- Prompt queueing
 - Cross-platform: macOS, Windows, Linux (web + Electron)
 
 ## Design Principles

@@ -2,7 +2,7 @@
 
 A browser-based chat interface for [Kiro CLI](https://kiro.dev/cli/), connected via the Agent Client Protocol (ACP).
 
-![Dark theme](https://img.shields.io/badge/theme-dark%20%2F%20light-9046ff) ![Tests](https://img.shields.io/badge/tests-140%20passing-34d399) ![Coverage](https://img.shields.io/badge/coverage-84%25-34d399)
+![Dark theme](https://img.shields.io/badge/theme-dark%20%2F%20light-9046ff) ![Tests](https://img.shields.io/badge/tests-160%20passing-34d399) ![Coverage](https://img.shields.io/badge/coverage-84%25-34d399)
 
 <p align="center">
   <img src="docs/guide/tour.gif" alt="Kiro UI Demo" width="720">
@@ -36,15 +36,24 @@ Kiro CLI is powerful — but the terminal isn't for everyone. Kiro UI gives deve
 - **Real-time streaming** — Markdown rendering, syntax highlighting (10 languages), side-by-side diffs
 - **Multi-tab sessions** — Independent kiro-cli processes per tab with ghost mascots
 - **Tool call visualization** — Collapsible blocks with grouping, raw I/O, clickable file paths
-- **MCP server panel** — Live status dots, expandable tool lists with descriptions
+- **Real-time shell streaming** — Command output streams line-by-line in tool blocks
+- **Agent Plan** — Live task list showing pending/in-progress/completed steps
+- **File follow-along** — Floating panel tracks which files the agent is editing
+- **MCP server panel** — Live status dots, expandable tool lists, OAuth flow
 - **Permission management** — Auto-approve policies, persistent trust rules
 - **Slash commands** — Autocomplete with dynamic subcommand options
+- **Conversation branching** — `/rewind` with visual timeline picker, fork from any turn
+- **Per-tab config** — Agent, model, permissions, effort level per session
+- **Effort control** — Reasoning effort dropdown (probes model support dynamically)
+- **Enhanced message queue** — Reorder, merge, edit, delete, send now
 - **Image & file attachments** — Paste, upload, preview before sending
-- **Context usage meter** — Pie chart showing context window consumption
+- **Voice input** — Speech-to-text via Web Speech API (Electron/HTTPS)
+- **Chat export** — Download conversation as markdown
+- **Context usage meter** — Pie chart with compact button at 50%+
+- **Session history** — Workspace-scoped, title filter, auto-sync tab names
 - **Settings page** — Editor integration, workspace directory, trust rules, Kiro agent settings
 - **Protocol debug panel** — Raw JSON-RPC traffic inspection
 - **Crash auto-reconnect** — Detects dead agent, auto-restarts within 1s
-- **Prompt queueing** — Type while the agent is working
 
 ## Quick Start
 

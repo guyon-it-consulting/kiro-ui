@@ -13,7 +13,8 @@ export async function initToken() {
 
 export function getToken() { return _token || ''; }
 
-export function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  if (!_token) await initToken();
   const headers = new Headers(init?.headers);
   headers.set('Authorization', `Bearer ${getToken()}`);
   return fetch(url, { ...init, headers });

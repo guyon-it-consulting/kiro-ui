@@ -11,10 +11,10 @@ export function handleExtNotification(method: string, params: any, emit: (data: 
       emit({ type: 'McpServerInitialized', tabId, serverName: p.serverName });
       break;
     case '_kiro.dev/mcp/server_init_failure':
-      emit({ type: 'McpServerInitFailure', tabId, serverName: p.serverName, error: p.error });
+      emit({ type: 'McpServerInitFailure', tabId, serverName: p.serverName || p.server_name, error: p.error, oauthUrl: p.oauthUrl || p.oauth_url });
       break;
     case '_kiro.dev/mcp/oauth_request':
-      emit({ type: 'McpOauthRequest', tabId, serverName: p.serverName, oauthUrl: p.oauthUrl });
+      emit({ type: 'McpOauthRequest', tabId, serverName: p.serverName || p.server_name, oauthUrl: p.oauthUrl || p.oauth_url || p.url });
       break;
     case '_kiro.dev/mcp/governance_disabled':
       emit({ type: 'McpGovernanceDisabled', tabId, apiFailure: p.apiFailure });
@@ -55,6 +55,9 @@ export function handleExtNotification(method: string, params: any, emit: (data: 
       } else if (p.update?.sessionUpdate === 'retry_warning') {
         emit({ type: 'RetryWarning', tabId, attempt: p.update.attempt, maxAttempts: p.update.maxAttempts, delaySecs: p.update.delaySecs, message: p.update.message });
       }
+      break;
+    default:
+      emit({ type: 'ProtocolLog', tabId, dir: 'in', msg: `ext: ${method} ${JSON.stringify(params).slice(0, 200)}` });
       break;
   }
 }

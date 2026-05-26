@@ -228,13 +228,16 @@ async function createSession(ws: WebSocket, loadSessionId?: string, tabId?: stri
           emit(ws, { type: 'Thinking', tabId: t, text: u.content?.text || u.text || '' });
           break;
         case 'tool_call':
-          emit(ws, { type: 'ToolCall', tabId: t, toolCallId: u.toolCallId, title: u.title, kind: u.kind, content: u.content, status: u.status, rawInput: u.rawInput });
+          emit(ws, { type: 'ToolCall', tabId: t, toolCallId: u.toolCallId, title: u.title, kind: u.kind, content: u.content, status: u.status, rawInput: u.rawInput, locations: u.locations });
           break;
         case 'tool_call_update':
-          emit(ws, { type: 'ToolCallUpdate', tabId: t, toolCallId: u.toolCallId, title: u.title, status: u.status, rawOutput: u.rawOutput });
+          emit(ws, { type: 'ToolCallUpdate', tabId: t, toolCallId: u.toolCallId, title: u.title, status: u.status, rawOutput: u.rawOutput, locations: u.locations });
           break;
         case 'tool_call_chunk':
-          emit(ws, { type: 'ToolCallChunk', tabId: t, toolCallId: u.toolCallId, title: u.title, kind: u.kind });
+          emit(ws, { type: 'ToolCallChunk', tabId: t, toolCallId: u.toolCallId, title: u.title, kind: u.kind, content: u.content });
+          break;
+        case 'plan':
+          emit(ws, { type: 'Plan', tabId: t, entries: u.entries });
           break;
         case 'user_message_chunk':
           emit(ws, { type: 'UserMessageChunk', tabId: t, text: u.content?.text || '' });
@@ -243,6 +246,7 @@ async function createSession(ws: WebSocket, loadSessionId?: string, tabId?: stri
     },
 
     async extNotification(method, params) {
+      emit(ws, { type: 'ProtocolLog', tabId: t, dir: 'in', msg: `[ext] ${method}` });
       handleExtNotification(method, params, (data) => emit(ws, data), t!);
     }
   };
@@ -285,7 +289,7 @@ wss.on('connection', async (ws) => {
       s = await createSession(ws, undefined, tabId);
       tabs.set(tabId, s);
       watchProc(s, tabId);
-      emit(ws, { type: 'ready', tabId, modes: s.modes, models: s.models });
+      emit(ws, { type: 'ready', tabId, sessionId: s.sessionId, modes: s.modes, models: s.models });
     }
     return s;
   }
@@ -315,7 +319,7 @@ wss.on('connection', async (ws) => {
           const ns = await createSession(ws, undefined, tabId);
           tabs.set(tabId, ns);
           watchProc(ns, tabId);
-          emit(ws, { type: 'ready', tabId, modes: ns.modes, models: ns.models });
+          emit(ws, { type: 'ready', tabId, sessionId: ns.sessionId, modes: ns.modes, models: ns.models });
         } catch (e: any) {
           emit(ws, { type: 'error', tabId, message: 'Failed to restart agent: ' + e.message });
         }
@@ -331,7 +335,7 @@ wss.on('connection', async (ws) => {
     const s = await createSession(ws, undefined, initTabId);
     tabs.set(initTabId, s);
     watchProc(s, initTabId);
-    emit(ws, { type: 'ready', tabId: initTabId, modes: s.modes, models: s.models });
+    emit(ws, { type: 'ready', tabId: initTabId, sessionId: s.sessionId, modes: s.modes, models: s.models });
   } catch (e: any) {
     emit(ws, { type: 'error', tabId: initTabId, message: 'Failed to initialize: ' + e.message });
     return;
@@ -352,10 +356,10 @@ wss.on('connection', async (ws) => {
       switch (msg.action) {
         case 'new_tab': {
           if (tabs.size >= getMaxTabs()) { emit(ws, { type: 'error', tabId: msg.tabId, message: `Max tabs (${getMaxTabs()}) reached` }); break; }
-          const s = await createSession(ws, undefined, msg.tabId);
+          const s = await createSession(ws, undefined, msg.tabId, msg.cwd);
           tabs.set(msg.tabId, s);
           watchProc(s, msg.tabId);
-          emit(ws, { type: 'ready', tabId: msg.tabId, modes: s.modes, models: s.models });
+          emit(ws, { type: 'ready', tabId: msg.tabId, sessionId: s.sessionId, modes: s.modes, models: s.models });
           break;
         }
         case 'close_tab': {
@@ -409,32 +413,38 @@ wss.on('connection', async (ws) => {
         }
         case 'new_chat': {
           const s = tabs.get(tabId);
-          if (s) teardown(s);
+          if (s) { tabs.delete(tabId); teardown(s); }
           const ns = await createSession(ws, undefined, tabId, msg.cwd);
           tabs.set(tabId, ns);
           watchProc(ns, tabId);
-          emit(ws, { type: 'ready', tabId, modes: ns.modes, models: ns.models });
+          emit(ws, { type: 'ready', tabId, sessionId: ns.sessionId, modes: ns.modes, models: ns.models });
           break;
         }
         case 'load_session': {
           const s = tabs.get(tabId);
-          if (s) teardown(s);
+          if (s) { tabs.delete(tabId); teardown(s); }
           try {
             const ns = await createSession(ws, msg.sessionId, tabId);
             tabs.set(tabId, ns);
+            watchProc(ns, tabId);
           } catch (e: any) {
-            try { const ns = await createSession(ws, undefined, tabId); tabs.set(tabId, ns); } catch { return; }
+            try {
+              const ns = await createSession(ws, undefined, tabId);
+              tabs.set(tabId, ns);
+              watchProc(ns, tabId);
+            } catch { return; }
             emit(ws, { type: 'error', tabId, message: 'Failed to load session: ' + e.message });
           }
-          emit(ws, { type: 'ready', tabId, modes: tabs.get(tabId)!.modes, models: tabs.get(tabId)!.models });
+          emit(ws, { type: 'ready', tabId, sessionId: tabs.get(tabId)!.sessionId, modes: tabs.get(tabId)!.modes, models: tabs.get(tabId)!.models });
           break;
         }
         case 'list_sessions': {
           const s = tabs.get(tabId) || tabs.values().next().value;
           if (s && !s.dead) {
             try {
-              const res = await s.conn.extMethod('_kiro.dev/session/list', { cwd: getWorkspace() });
-              emit(ws, { type: 'SessionList', sessions: ((res as any).sessions || []).map((x: any) => ({ value: x.sessionId, label: x.title, updatedAt: x.updatedAt })) });
+              const res = await s.conn.extMethod('_kiro.dev/session/list', { cwd: msg.cwd || getWorkspace() });
+              const sessions = (res as any).sessions || [];
+              emit(ws, { type: 'SessionList', sessions: sessions.map((x: any) => ({ value: x.sessionId, label: x.title || '', updatedAt: x.updatedAt, messageCount: x.messageCount })) });
             } catch { emit(ws, { type: 'SessionList', sessions: [] }); }
           }
           break;
@@ -483,16 +493,6 @@ wss.on('connection', async (ws) => {
         }
         case 'set_debug': {
           for (const s of tabs.values()) s.setDebug(!!msg.enabled);
-          break;
-        }
-        case 'session_delete': {
-          const s = tabs.get(tabId) || tabs.values().next().value;
-          if (s && !s.dead) {
-            try {
-              await (s.conn as any).unstable_deleteSession({ sessionId: msg.sessionId });
-              emit(ws, { type: 'SessionDeleted', tabId, sessionId: msg.sessionId });
-            } catch (e: any) { emit(ws, { type: 'error', tabId, message: e.message }); }
-          }
           break;
         }
         case 'set_config_option': {

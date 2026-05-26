@@ -32,28 +32,29 @@ import { apiFetch } from './apiFetch';
 import { ToolBlock, ToolGroup } from './ToolBlock';
 import { ThinkingBlock } from './ThinkingBlock';
 import { MessageActions } from './MessageActions';
+import { RewindTimeline } from './RewindTimeline';
 import { McpPanel } from './McpPanel';
 import { SettingsPage } from './SettingsPage';
 import { PanelMessage } from './PanelMessage';
-import type { TabState, Msg, ModesState, ModelsState, McpServer, McpTool, SlashCommand, SessionEntry, Toast, ProtocolLog, PendingImage, PendingFile, EditorType, CommandOption } from './types';
+import type { TabState, Msg, ModesState, ModelsState, McpServer, McpTool, SlashCommand, SessionEntry, Toast, ProtocolLog, PendingImage, PendingFile, EditorType, CommandOption, PlanEntry } from './types';
+import { EDITOR_SCHEMES } from './types';
 
 marked.setOptions({ breaks: true });
 
 function newTab(id: string, name: string): TabState {
-  return { id, name, messages: [], thinking: null, permissions: [], isRunning: false, metadata: { contextUsagePercentage: 0 }, queue: [], stream: '' };
+  return { id, name, messages: [], thinking: null, permissions: [], isRunning: false, metadata: { contextUsagePercentage: 0 }, queue: [], stream: '', modes: null, models: null, permPolicy: 'ask' };
 }
 
 export function App() {
-  const [tabs, setTabs] = useState<TabState[]>([newTab('tab-1', 'Tab 1')]);
+  const [tabs, setTabs] = useState<TabState[]>([newTab('tab-1', 'New Chat')]);
   const [activeTabId, setActiveTabId] = useState('tab-1');
   const [tabCounter, setTabCounter] = useState(1);
-  const [modes, setModes] = useState<ModesState | null>(null);
-  const [models, setModels] = useState<ModelsState | null>(null);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [allTools, setAllTools] = useState<McpTool[]>([]);
+  const [oauthPending, setOauthPending] = useState<Record<string, string>>({});
+  const oauthPendingRef = useRef<Record<string, string>>({});
   const [sessions, setSessions] = useState<SessionEntry[]>([]);
-  const [permPolicy, setPermPolicy] = useState('ask');
   const [input, setInput] = useState('');
   const [cmdFilter, setCmdFilter] = useState<CommandOption[] | null>(null);
   const [cmdIdx, setCmdIdx] = useState(0);
@@ -63,7 +64,7 @@ export function App() {
   const [editor, setEditor] = useState<EditorType>('vscode');
   useEffect(() => { apiFetch('/api/settings').then(r => r.json()).then(d => {
     if (d.editor) setEditor(d.editor);
-    if (d.permPolicy) setPermPolicy(d.permPolicy);
+    if (d.permPolicy) updateTab('tab-1', t => ({ ...t, permPolicy: d.permPolicy }));
     if (d.debugEnabled === 'true') setDebugEnabled(true);
     if (d.queueEnabled === 'true') setQueueEnabled(true);
   }); }, []);
@@ -76,19 +77,22 @@ export function App() {
   const [queueEnabled, setQueueEnabled] = useState(false);
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
-  const [editingTabId, setEditingTabId] = useState<string | null>(null);
+  const [sessionFilter, setSessionFilter] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const recognitionRef = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
-  const modelsRef = useRef<ModelsState | null>(null);
-  const permPolicyRef = useRef('ask');
 
   const updateTab = useCallback((tabId: string, fn: (t: TabState) => TabState) => {
     setTabs(ts => ts.map(t => t.id === tabId ? fn(t) : t));
   }, []);
 
   const tab = tabs.find(t => t.id === activeTabId) || tabs[0];
+  const modes = tab.modes;
+  const models = tab.models;
+  const permPolicy = tab.permPolicy;
 
   useEffect(() => { document.documentElement.setAttribute('data-theme', theme); localStorage.setItem('theme', theme); }, [theme]);
   useEffect(() => { apiFetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ editor }) }); }, [editor]);
@@ -108,23 +112,25 @@ export function App() {
     const tid = (data.tabId as string) || 'tab-1';
     switch (data.type) {
       case 'ready':
-        if (modes && modes.currentModeId && (data.modes as ModesState)?.currentModeId !== modes.currentModeId) {
-          setTimeout(() => sendRef.current({ action: 'set_mode', tabId: tid, modeId: modes.currentModeId }), 100);
-          data.modes = { ...(data.modes as ModesState), currentModeId: modes.currentModeId };
-        }
-        if (modes && modelsRef.current?.currentModelId && (data.models as ModelsState)?.currentModelId !== modelsRef.current.currentModelId) {
-          setTimeout(() => sendRef.current({ action: 'set_model', tabId: tid, modelId: modelsRef.current!.currentModelId }), 100);
-          data.models = { ...(data.models as ModelsState), currentModelId: modelsRef.current.currentModelId };
-        }
-        if (modes && permPolicyRef.current !== 'ask') {
-          setTimeout(() => sendRef.current({ action: 'set_permission_policy', tabId: tid, policy: permPolicyRef.current }), 100);
-        }
-        setModes(data.modes as ModesState); setModels(data.models as ModelsState);
-        updateTab(tid, t => ({ ...t, isRunning: false, stream: '', messages: t.messages.map(msg =>
-          msg.role === 'assistant-stream' ? { ...msg, role: 'assistant' } :
-          msg.role === 'user-stream' ? { ...msg, role: 'user' } : msg
-        )}));
-        setTimeout(() => sendRef.current({ action: 'list_sessions', tabId: tid }), 500);
+        updateTab(tid, t => {
+          // Sync mode/model/policy if tab had previous preferences
+          if (t.modes && t.modes.currentModeId && (data.modes as ModesState)?.currentModeId !== t.modes.currentModeId) {
+            setTimeout(() => sendRef.current({ action: 'set_mode', tabId: tid, modeId: t.modes!.currentModeId }), 100);
+          }
+          if (t.models && t.models.currentModelId && (data.models as ModelsState)?.currentModelId !== t.models.currentModelId) {
+            setTimeout(() => sendRef.current({ action: 'set_model', tabId: tid, modelId: t.models!.currentModelId }), 100);
+          }
+          if (t.permPolicy !== 'ask') {
+            setTimeout(() => sendRef.current({ action: 'set_permission_policy', tabId: tid, policy: t.permPolicy }), 100);
+          }
+          const newModes = t.modes?.currentModeId ? { ...(data.modes as ModesState), currentModeId: t.modes.currentModeId } : data.modes as ModesState;
+          const newModels = t.models?.currentModelId ? { ...(data.models as ModesState), currentModelId: t.models.currentModelId } as any : data.models as ModelsState;
+          return { ...t, isRunning: false, stream: '', sessionId: data.sessionId as string, modes: newModes, models: newModels, messages: t.messages.map(msg =>
+            msg.role === 'assistant-stream' ? { ...msg, role: 'assistant' } :
+            msg.role === 'user-stream' ? { ...msg, role: 'user' } : msg
+          )};
+        });
+        setTimeout(() => { sendRef.current({ action: 'list_sessions', tabId: tid }); sendRef.current({ action: 'command_options', tabId: tid, command: 'effort', input: '' }); }, 500);
         break;
       case 'UserMessageChunk':
         updateTab(tid, t => {
@@ -154,8 +160,10 @@ export function App() {
           const exists = t.messages.some(m => m.tool?.toolCallId === data.toolCallId);
           const entry: Msg = { role: 'tool', text: '', tool: { toolCallId: data.toolCallId as string, title: data.title as string, kind: data.kind as string | undefined, content: data.content as Msg['tool'] extends undefined ? never : NonNullable<Msg['tool']>['content'], status: (data.status as string) || 'pending', expanded: false, rawInput: data.rawInput } };
           const msgs = t.messages.map(msg => msg.role === 'assistant-stream' ? { ...msg, role: 'assistant' } : msg);
-          if (exists) return { ...t, stream: '', messages: msgs.map(m => m.tool?.toolCallId === data.toolCallId ? entry : m) };
-          return { ...t, stream: '', messages: [...msgs, entry] };
+          const locs = data.locations as { path: string; line?: number }[] | undefined;
+          const newFiles = locs?.length ? [...(t.activeFiles || []).filter(f => !locs.some(l => l.path === f.path)), ...locs.map(l => ({ ...l, kind: data.kind as string }))] : t.activeFiles;
+          if (exists) return { ...t, stream: '', activeFiles: newFiles, messages: msgs.map(m => m.tool?.toolCallId === data.toolCallId ? entry : m) };
+          return { ...t, stream: '', activeFiles: newFiles, messages: [...msgs, entry] };
         });
         break;
       case 'ToolCallUpdate':
@@ -163,9 +171,17 @@ export function App() {
         break;
       case 'ToolCallChunk':
         updateTab(tid, t => {
-          if (t.messages.some(m => m.tool?.toolCallId === data.toolCallId)) return t;
+          const existing = t.messages.find(m => m.tool?.toolCallId === data.toolCallId);
+          if (existing) {
+            // Append streaming content to existing tool block
+            const chunk = data.content as { text?: string } | undefined;
+            if (chunk?.text) {
+              return { ...t, messages: t.messages.map(m => m.tool?.toolCallId === data.toolCallId ? { ...m, tool: { ...m.tool!, streamOutput: (m.tool!.streamOutput || '') + chunk.text } } : m) };
+            }
+            return t;
+          }
           const msgs = t.messages.map(msg => msg.role === 'assistant-stream' ? { ...msg, role: 'assistant' } : msg);
-          return { ...t, stream: '', messages: [...msgs, { role: 'tool', text: '', tool: { toolCallId: data.toolCallId as string, title: data.title as string, kind: data.kind as string | undefined, status: 'pending', expanded: false } }] };
+          return { ...t, stream: '', messages: [...msgs, { role: 'tool', text: '', tool: { toolCallId: data.toolCallId as string, title: data.title as string, kind: data.kind as string | undefined, status: 'pending', expanded: true } }] };
         });
         break;
       case 'PermissionRequest':
@@ -180,9 +196,9 @@ export function App() {
           if (t.queue.length) {
             const [next, ...rest] = t.queue;
             sendRef.current({ action: 'prompt', tabId: tid, text: next });
-            return { ...t, thinking: null, permissions: [], messages: [...msgs, { role: 'user', text: next }], stream: '', queue: rest };
+            return { ...t, thinking: null, permissions: [], plan: undefined, messages: [...msgs, { role: 'user', text: next }], stream: '', queue: rest, lastStopReason: data.stopReason as string };
           }
-          return { ...t, thinking: null, permissions: [], messages: msgs, stream: '', isRunning: false };
+          return { ...t, thinking: null, permissions: [], plan: undefined, messages: msgs, stream: '', isRunning: false, lastStopReason: data.stopReason as string };
         });
         loadSessions();
         if (document.hidden) {
@@ -195,11 +211,26 @@ export function App() {
       case 'Metadata':
         updateTab(tid, t => ({ ...t, metadata: { contextUsagePercentage: data.contextUsagePercentage as number, turnDurationMs: data.turnDurationMs as number | undefined } }));
         break;
-      case 'SessionList':
-        setSessions((data.sessions as { value: string; label: string; description?: string }[]).map(s => ({ id: s.value, title: s.label, description: s.description })));
+      case 'Plan':
+        updateTab(tid, t => ({ ...t, plan: data.entries as PlanEntry[] }));
         break;
+      case 'SessionList': {
+        const sessionList = (data.sessions as { value: string; label: string; description?: string }[]).map(s => ({ id: s.value, title: s.label, description: s.description }));
+        setSessions(sessionList);
+        // Sync tab names from session titles
+        setTabs(ts => ts.map(t => {
+          if (!t.sessionId) return t;
+          const match = sessionList.find(s => s.id === t.sessionId);
+          if (match?.title && match.title !== t.name && !match.title.includes('title not available')) return { ...t, name: match.title };
+          return t;
+        }));
+        break;
+      }
       case 'CommandOptions':
-        if (data.panel) {
+        if (data.command === 'effort') {
+          const options = data.options as { value: string }[] | undefined;
+          updateTab(tid, t => ({ ...t, effortSupported: !!(options?.length) }));
+        } else if (data.panel) {
           const panel = data.panel as Record<string, string>;
           updateTab(tid, t => ({ ...t, messages: [...t.messages, { role: 'assistant', text: panel.content || panel.text || JSON.stringify(panel) }] }));
           setCmdFilter(null); setCmdHint(null);
@@ -211,7 +242,8 @@ export function App() {
         }
         break;
       case 'error':
-        updateTab(tid, t => ({ ...t, messages: [...t.messages, { role: 'system', text: data.message as string }] }));
+        updateTab(tid, t => ({ ...t, isRunning: false, messages: [...t.messages, { role: 'system', text: data.message as string }] }));
+        addToast(data.message as string, 'error');
         break;
       case 'McpServerInitialized':
         if (!seenMcpInits.current.has(data.serverName as string)) {
@@ -219,15 +251,43 @@ export function App() {
           addToast(`MCP server "${data.serverName}" connected`, 'info');
         }
         setMcpServers(servers => servers.map(s => s.name === data.serverName ? { ...s, status: 'running' } : s));
+        setOauthPending(p => { const { [data.serverName as string]: _, ...rest } = p; return rest; });
         break;
-      case 'McpServerInitFailure':
-        addToast(`MCP server "${data.serverName}" failed: ${data.error}`, 'error');
-        setMcpServers(servers => servers.map(s => s.name === data.serverName ? { ...s, status: 'failed' } : s));
+      case 'McpServerInitFailure': {
+        const serverName = data.serverName as string;
+        const error = data.error as string || '';
+        const oauthUrl = data.oauthUrl as string || '';
+        // Check if the failure is actually an OAuth challenge
+        const urlMatch = oauthUrl || error.match(/https:\/\/\S+/)?.[0] || '';
+        if (urlMatch && /oauth|auth|login|authorize/i.test(urlMatch + error)) {
+          setOauthPending(p => ({ ...p, [serverName]: urlMatch }));
+          setMcpServers(servers => {
+            const exists = servers.some(s => s.name === serverName);
+            if (exists) return servers.map(s => s.name === serverName ? { ...s, status: 'auth_required' } : s);
+            return [...servers, { name: serverName, status: 'auth_required' }];
+          });
+        } else if (oauthPendingRef.current[serverName]) {
+          // Post-OAuth failure — server needs retry after auth
+          addToast(`MCP "${serverName}" auth complete — retrying connection...`, 'info');
+          setOauthPending(p => { const { [serverName]: _, ...rest } = p; return rest; });
+          setMcpServers(servers => servers.map(s => s.name === serverName ? { ...s, status: 'retrying' } : s));
+          // Trigger reconnect by sending /mcp
+          setTimeout(() => sendRef.current({ action: 'prompt', tabId: activeTabId, text: '/mcp reconnect' }), 1000);
+        } else {
+          addToast(`MCP server "${serverName}" failed: ${error}`, 'error');
+          setMcpServers(servers => servers.map(s => s.name === serverName ? { ...s, status: 'failed' } : s));
+        }
         break;
+      }
       case 'McpOauthRequest':
-        addToast(`MCP "${data.serverName}" requires auth — click to open`, 'warning');
         if (typeof data.oauthUrl === 'string' && /^https:\/\//.test(data.oauthUrl)) {
-          window.open(data.oauthUrl, '_blank');
+          const name = data.serverName as string;
+          setOauthPending(p => ({ ...p, [name]: data.oauthUrl as string }));
+          setMcpServers(servers => {
+            const exists = servers.some(s => s.name === name);
+            if (exists) return servers.map(s => s.name === name ? { ...s, status: 'auth_required' } : s);
+            return [...servers, { name, status: 'auth_required' }];
+          });
         }
         break;
       case 'McpGovernanceDisabled':
@@ -244,7 +304,7 @@ export function App() {
         updateTab(tid, t => ({ ...t, messages: [], thinking: null }));
         break;
       case 'AgentSwitched':
-        if (modes && data.agentName) setModes({ ...modes, currentModeId: data.agentName as string });
+        if (modes && data.agentName) updateTab(tid, t => ({ ...t, modes: t.modes ? { ...t.modes, currentModeId: data.agentName as string } : t.modes }));
         if (data.welcomeMessage) updateTab(tid, t => ({ ...t, messages: [...t.messages, { role: 'assistant', text: data.welcomeMessage as string }] }));
         addToast(`Switched to ${data.agentName}`, 'info');
         break;
@@ -258,7 +318,16 @@ export function App() {
         addToast((data.message as string) || 'Rate limit exceeded. Please wait.', 'error');
         break;
       case 'SessionListUpdate':
-        if (data.sessions) setSessions((data.sessions as { sessionId: string; title?: string; name?: string }[]).map(s => ({ id: s.sessionId, title: s.title || s.name || '', description: '' })));
+        if (data.sessions) {
+          const sessionList = (data.sessions as { sessionId: string; title?: string; name?: string }[]).map(s => ({ id: s.sessionId, title: s.title || s.name || '', description: '' }));
+          setSessions(sessionList);
+          setTabs(ts => ts.map(t => {
+            if (!t.sessionId) return t;
+            const match = sessionList.find(s => s.id === t.sessionId);
+            if (match?.title && match.title !== t.name && !match.title.includes('title not available')) return { ...t, name: match.title };
+            return t;
+          }));
+        }
         break;
       case 'InboxNotification':
         addToast(`Message from subagent: ${(data.message as string) || 'New notification'}`, 'info');
@@ -284,12 +353,11 @@ export function App() {
         setProtocolLogs(l => [...l.slice(-200), { dir: data.dir as string, msg: data.msg as string, ts: Date.now() }]);
         break;
     }
-  }, [updateTab, addToast, modes]);
+  }, [updateTab, addToast]);
 
   const { send, status } = useWebSocket(handleMessage);
   sendRef.current = send;
-  modelsRef.current = models;
-  permPolicyRef.current = permPolicy;
+  oauthPendingRef.current = oauthPending;
 
   // Auto-scroll
   useEffect(() => {
@@ -341,11 +409,51 @@ export function App() {
     return () => window.removeEventListener('keydown', handler);
   }, [activeTabId]);
 
-  function loadSessions() { sendRef.current({ action: 'list_sessions', tabId: activeTabId }); }
+  function loadSessions() { sendRef.current({ action: 'list_sessions', tabId: activeTabId, cwd: tab.cwd }); }
+  useEffect(() => { if (modes) loadSessions(); }, [activeTabId]);
 
-  function loadSession(id: string) {
-    updateTab(activeTabId, t => ({ ...t, messages: [], thinking: null, permissions: [], stream: '', isRunning: true }));
-    send({ action: 'load_session', tabId: activeTabId, sessionId: id });
+  function loadSession(id: string, title?: string) {
+    // If this session is already open in a tab, just focus it
+    const existing = tabs.find(t => t.sessionId === id);
+    if (existing) { setActiveTabId(existing.id); return; }
+    // Open in a new tab
+    const num = tabCounter + 1;
+    setTabCounter(num);
+    const tabId = `tab-${num}`;
+    const t = { ...newTab(tabId, title || 'Loading...'), isRunning: true, cwd: tab.cwd };
+    setTabs(ts => [...ts, t]);
+    setActiveTabId(tabId);
+    send({ action: 'new_tab', tabId });
+    send({ action: 'load_session', tabId, sessionId: id });
+  }
+
+  const speechSupported = typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+
+  function startVoice() {
+    if (!speechSupported || recognitionRef.current) return;
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const rec = new SR();
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.lang = '';
+    rec.onresult = (e: any) => {
+      const text = e.results[0]?.[0]?.transcript || '';
+      if (text) setInput(prev => prev ? prev + ' ' + text : text);
+    };
+    rec.onend = () => { recognitionRef.current = null; setIsRecording(false); };
+    rec.onerror = (e: any) => {
+      recognitionRef.current = null; setIsRecording(false);
+      if (e.error === 'network') addToast('Voice requires HTTPS or Electron app', 'warning');
+      else if (e.error === 'not-allowed') addToast('Microphone access denied', 'error');
+    };
+    try { rec.start(); } catch { return; }
+    recognitionRef.current = rec;
+    setIsRecording(true);
+  }
+
+  function stopVoice() {
+    if (recognitionRef.current) { recognitionRef.current.abort(); recognitionRef.current = null; }
+    setIsRecording(false);
   }
 
   function handleSend() {
@@ -362,7 +470,7 @@ export function App() {
       if (tab.isRunning && queueEnabled) { updateTab(activeTabId, t => ({ ...t, queue: [...t.queue, text] })); setInput(''); return; }
       if (tab.isRunning) { setInput(''); return; }
     }
-    updateTab(activeTabId, t => ({ ...t, messages: [...t.messages, { role: 'user', text }], isRunning: true, stream: '' }));
+    updateTab(activeTabId, t => ({ ...t, messages: [...t.messages, { role: 'user', text }], isRunning: true, stream: '', activeFiles: undefined }));
     send({ action: 'prompt', tabId: activeTabId, text, images: pendingImages.length ? pendingImages : undefined, files: pendingFiles.length ? pendingFiles : undefined });
     setInput(''); setPendingImages([]); setPendingFiles([]);
   }
@@ -370,8 +478,36 @@ export function App() {
   function retryMessage(idx: number) {
     const msg = tab.messages[idx];
     if (msg.role !== 'user') return;
-    updateTab(activeTabId, t => ({ ...t, messages: t.messages.slice(0, idx), isRunning: true, stream: '' }));
+    updateTab(activeTabId, t => ({ ...t, messages: [...t.messages.slice(0, idx), { role: 'user', text: msg.text }], isRunning: true, stream: '', lastStopReason: undefined }));
     send({ action: 'prompt', tabId: activeTabId, text: msg.text });
+  }
+
+  const [showRewind, setShowRewind] = useState(false);
+
+  function handleRewind(turnIndex: number) {
+    const turnNum = tab.messages.slice(0, turnIndex + 1).filter(m => m.role === 'user').length;
+    setShowRewind(false);
+    // Keep messages up to (but not including) the next user message after turnIndex
+    const nextUserIdx = tab.messages.findIndex((m, i) => i > turnIndex && m.role === 'user');
+    const sliceEnd = nextUserIdx === -1 ? tab.messages.length : nextUserIdx;
+    updateTab(activeTabId, t => ({ ...t, messages: t.messages.slice(0, sliceEnd), thinking: null, isRunning: true, stream: '' }));
+    send({ action: 'prompt', tabId: activeTabId, text: `/rewind ${turnNum}` });
+  }
+
+  function exportMarkdown() {
+    const lines: string[] = [`# ${tab.name}\n`];
+    for (const m of tab.messages) {
+      if (m.role === 'user') lines.push(`## User\n\n${m.text}\n`);
+      else if (m.role === 'assistant') lines.push(`## Assistant\n\n${m.text}\n`);
+      else if (m.role === 'tool' && m.tool) lines.push(`> **${m.tool.title}** — ${m.tool.status}\n`);
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${tab.name.replace(/[^a-zA-Z0-9-_ ]/g, '')}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   const cmdDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -418,17 +554,16 @@ export function App() {
   }
 
   function newChat() {
-    updateTab(activeTabId, t => ({ ...t, messages: [], thinking: null, permissions: [], stream: '' }));
-    send({ action: 'new_chat', tabId: activeTabId, cwd: tab.cwd });
+    addTab();
   }
 
   function addTab() {
     const num = tabCounter + 1;
     setTabCounter(num);
     const id = `tab-${num}`;
-    setTabs(ts => [...ts, newTab(id, `Tab ${num}`)]);
+    setTabs(ts => [...ts, { ...newTab(id, 'New Chat'), cwd: tab.cwd }]);
     setActiveTabId(id);
-    send({ action: 'new_tab', tabId: id });
+    send({ action: 'new_tab', tabId: id, cwd: tab.cwd });
   }
 
   function closeTab(id: string) {
@@ -438,7 +573,6 @@ export function App() {
     if (activeTabId === id) setActiveTabId(tabs.find(t => t.id !== id)!.id);
   }
 
-  function renameTab(id: string, name: string) { updateTab(id, t => ({ ...t, name })); setEditingTabId(null); }
   function scrollToBottom() { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }
 
   const statusText = modes ? 'Connected' : status === 'connecting' ? 'Connecting...' : 'Disconnected';
@@ -453,16 +587,29 @@ export function App() {
     <aside className={`sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
       <h2>
         <button className="sidebar-toggle" onClick={() => setSidebarOpen(false)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-        History
+        Sessions
         <button onClick={newChat}>+ New</button>
       </h2>
+      <div className="sidebar-workspace" onClick={async () => {
+        let dir: string | null = null;
+        try { const res = await apiFetch('/api/pick-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ startPath: tab.cwd || '' }) }); if (res.ok) { const d = await res.json(); if (d.path) dir = d.path; } } catch { /* fall through */ }
+        if (!dir) dir = prompt('Workspace directory:', tab.cwd || '');
+        if (dir !== null) { updateTab(activeTabId, t => ({ ...t, cwd: dir || undefined })); send({ action: 'new_chat', tabId: activeTabId, cwd: dir || undefined }); }
+      }}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+        <span>{tab.cwd || '~/.kiro-ui/workspace'}</span>
+      </div>
       <div className="sessions">
-        {sessions.slice(0, 50).map(s => (
-          <div key={s.id} className="session-item" onClick={() => loadSession(s.id)}>
-            <span className="session-title">{(!s.title || s.title.includes('title not available')) ? 'New Chat' : s.title}</span>
-            <button className="session-delete" onClick={e => { e.stopPropagation(); send({ action: 'session_delete', sessionId: s.id }); setSessions(ss => ss.filter(x => x.id !== s.id)); }} title="Delete session">✕</button>
-          </div>
-        ))}
+        <input className="session-search" placeholder="Filter sessions..." value={sessionFilter} onChange={e => setSessionFilter(e.target.value)} />
+        {sessions.filter(s => s.title && (!sessionFilter || s.title.toLowerCase().includes(sessionFilter.toLowerCase()))).slice(0, 50).map(s => {
+          const isOpen = tabs.some(t => t.sessionId === s.id);
+          return (
+            <div key={s.id} className={`session-item ${isOpen ? 'open' : ''}`} onClick={() => loadSession(s.id, s.title)}>
+              {isOpen && <span className="session-dot" />}
+              <span className="session-title">{s.title}</span>
+            </div>
+          );
+        })}
       </div>
     </aside>
     <div className="main">
@@ -470,18 +617,6 @@ export function App() {
         {!sidebarOpen && <button className="sidebar-open-btn" onClick={() => setSidebarOpen(true)}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg></button>}
         <h1><span style={{color: 'var(--accent)'}}>Kiro</span></h1>
         <div className="selectors">
-          {modes && <select value={modes.currentModeId} onChange={e => { send({ action: 'set_mode', tabId: activeTabId, modeId: e.target.value }); setModes({ ...modes, currentModeId: e.target.value }); }}>
-            {modes.availableModes.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>}
-          {models && <select value={models.currentModelId} onChange={e => { send({ action: 'set_model', tabId: activeTabId, modelId: e.target.value }); setModels({ ...models, currentModelId: e.target.value }); }}>
-            {models.availableModels.map(m => <option key={m.modelId} value={m.modelId}>{m.name}</option>)}
-          </select>}
-          <div className="header-divider" />
-          <select value={permPolicy} onChange={e => { setPermPolicy(e.target.value); send({ action: 'set_permission_policy', tabId: activeTabId, policy: e.target.value }); }}>
-            <option value="ask">⛨ Ask</option>
-            <option value="approve-reads">◑ Auto-reads</option>
-            <option value="allow-all">◉ Allow all</option>
-          </select>
           <button className="theme-toggle" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} title="Toggle theme">
             {theme === 'dark' ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg> : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>}
           </button>
@@ -499,33 +634,61 @@ export function App() {
             <span className={`tab-ghost ${t.isRunning ? 'floating' : t.id === activeTabId ? 'active-idle' : 'sleeping'}`} style={{ '--ghost-color': `var(--ghost-${idx % 6})` } as React.CSSProperties}>
               <svg viewBox="0 0 24 24" fill="none"><path d="M7.5 16.5c-1.8 4-0.3 5.2 2.5 3.3 0.8 2.6 3.7 1.6 4.8 0 2.5-4.5 1.5-9.1 1.3-10 -1.8-6.4-10.7-6.4-12.2 0-0.4 1.1-0.4 2.4-0.6 3.7-0.1 0.7-0.2 1.1-0.4 1.8-0.2 0.4-0.4 0.8-0.7 1.4-0.5 0.9-0.3 2.8 2.3 1.8l0.2-0.1z" fill="currentColor" stroke="var(--ghost-color)" strokeWidth="1.5"/><ellipse cx="12.5" cy="9.5" rx="0.9" ry="1.3" fill="var(--surface)"/><ellipse cx="15.5" cy="9.5" rx="0.9" ry="1.3" fill="var(--surface)"/></svg>
             </span>
-            {editingTabId === t.id
-              ? <input className="tab-rename" autoFocus defaultValue={t.name} onBlur={e => renameTab(t.id, e.target.value)} onKeyDown={e => { if (e.key === 'Enter') renameTab(t.id, (e.target as HTMLInputElement).value); if (e.key === 'Escape') setEditingTabId(null); }} />
-              : <span className="tab-name" onDoubleClick={() => setEditingTabId(t.id)}>{t.name}</span>}
+            <span className="tab-name">{t.name}</span>
             {tabs.length > 1 && <button className="tab-close" onClick={e => { e.stopPropagation(); closeTab(t.id); }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>}
           </div>
         ))}
         <button className="tab-add" onClick={addTab} title="New tab (⌘T)">+</button>
       </div>
 
-      {showSettings ? <SettingsPage editor={editor} setEditor={setEditor} onClose={() => setShowSettings(false)} send={send} kiroSettings={kiroSettings} debugEnabled={debugEnabled} setDebugEnabled={setDebugEnabled} /> : <>
-      <div className="workspace-bar">
-        <span className="workspace-label"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:'inline',verticalAlign:'middle',marginRight:4,opacity:0.7}}><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>{tab.cwd || '~/.kiro-ui/workspace'}</span>
-        <button className="workspace-change" onClick={async () => {
-          let dir: string | null = null;
-          try { const res = await apiFetch('/api/pick-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ startPath: tab.cwd || '' }) }); if (res.ok) { const d = await res.json(); if (d.path) dir = d.path; } } catch { /* fall through */ }
-          if (!dir) dir = prompt('Workspace directory for this session:', tab.cwd || '');
-          if (dir !== null) { updateTab(activeTabId, t => ({ ...t, cwd: dir || undefined })); send({ action: 'new_chat', tabId: activeTabId, cwd: dir || undefined }); }
-        }}>Change</button>
+      <div className="tab-config">
+        {modes && <select value={modes.currentModeId} onChange={e => { send({ action: 'set_mode', tabId: activeTabId, modeId: e.target.value }); updateTab(activeTabId, t => ({ ...t, modes: { ...t.modes!, currentModeId: e.target.value } })); }}>
+          {modes.availableModes.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>}
+        {models && <select value={models.currentModelId} onChange={e => { send({ action: 'set_model', tabId: activeTabId, modelId: e.target.value }); updateTab(activeTabId, t => ({ ...t, models: { ...t.models!, currentModelId: e.target.value }, effortSupported: undefined })); send({ action: 'command_options', tabId: activeTabId, command: 'effort', input: '' }); }}>
+          {models.availableModels.map(m => <option key={m.modelId} value={m.modelId}>{m.name}</option>)}
+        </select>}
+        {tab.effortSupported && <select className="effort-select" value={tab.effort || 'default'} onChange={e => { const v = e.target.value; updateTab(activeTabId, t => ({ ...t, effort: v === 'default' ? undefined : v })); if (v !== 'default') send({ action: 'prompt', tabId: activeTabId, text: `/effort ${v}` }); }}>
+          <option value="default">⚡ Effort</option>
+          <option value="low">⚡ Low</option>
+          <option value="medium">⚡⚡ Medium</option>
+          <option value="high">⚡⚡⚡ High</option>
+          <option value="xhigh">🔥 X-High</option>
+          <option value="max">🔥🔥 Max</option>
+        </select>}
+        <select value={permPolicy} onChange={e => { updateTab(activeTabId, t => ({ ...t, permPolicy: e.target.value })); send({ action: 'set_permission_policy', tabId: activeTabId, policy: e.target.value }); }}>
+          <option value="ask">⛨ Ask</option>
+          <option value="approve-reads">◑ Auto-reads</option>
+          <option value="allow-all">◉ Allow all</option>
+        </select>
+        {tab.messages.length > 0 && <button className="export-btn" onClick={exportMarkdown} title="Export as Markdown"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>}
       </div>
+
+      {showSettings ? <SettingsPage editor={editor} setEditor={setEditor} onClose={() => setShowSettings(false)} send={send} kiroSettings={kiroSettings} debugEnabled={debugEnabled} setDebugEnabled={setDebugEnabled} /> : <>
       <div className="messages" ref={messagesContainerRef}>
-        {mcpServers.length > 0 && modes && <McpPanel servers={mcpServers} tools={allTools} />}
+        {(mcpServers.length > 0 || (tab.activeFiles && tab.activeFiles.length > 0)) && <div className="side-panels">
+          {mcpServers.length > 0 && modes && <McpPanel servers={mcpServers} tools={allTools} oauthPending={oauthPending} />}
+          {tab.activeFiles && tab.activeFiles.length > 0 && <div className="files-panel">
+            <div className="files-title">Files</div>
+            {tab.activeFiles.slice(-8).map((f, i) => {
+              const fullPath = f.path.startsWith('/') ? f.path : (tab.cwd || '') + '/' + f.path;
+              return (
+                <a key={i} className="files-item" href={`${EDITOR_SCHEMES[editor]}${fullPath}${f.line ? ':' + f.line : ''}`} title={fullPath}>
+                  <span className="files-icon">{f.kind === 'edit' ? '✏️' : f.kind === 'read' ? '📖' : '📄'}</span>
+                  <span className="files-path">{f.path.split('/').pop()}{f.line ? ':' + f.line : ''}</span>
+                </a>
+              );
+            })}
+          </div>}
+        </div>}
         {isLoading && <div className="loading-skeleton"><div className="skel-line" /><div className="skel-line short" /><div className="skel-line" /></div>}
 
         {!hasMessages && !isLoading && (
           <div className="empty-state">
             <div className="logo"><svg viewBox="0 0 24 24" fill="none"><path d="M7.5 16.5c-1.8 4-0.3 5.2 2.5 3.3 0.8 2.6 3.7 1.6 4.8 0 2.5-4.5 1.5-9.1 1.3-10 -1.8-6.4-10.7-6.4-12.2 0-0.4 1.1-0.4 2.4-0.6 3.7-0.1 0.7-0.2 1.1-0.4 1.8-0.2 0.4-0.4 0.8-0.7 1.4-0.5 0.9-0.3 2.8 2.3 1.8l0.2-0.1z" fill="var(--accent)" stroke="var(--accent)" strokeWidth="0.5"/><ellipse cx="12.5" cy="9.5" rx="0.9" ry="1.3" fill="var(--bg)"/><ellipse cx="15.5" cy="9.5" rx="0.9" ry="1.3" fill="var(--bg)"/></svg></div>
-            <p>What can I help you with?</p>
+            {modes && <p className="empty-agent-name">{modes.availableModes.find(m => m.id === modes.currentModeId)?.name || modes.currentModeId}</p>}
+            {modes && <p className="empty-agent-desc">{modes.availableModes.find(m => m.id === modes.currentModeId)?.description || 'What can I help you with?'}</p>}
+            {!modes && <p>What can I help you with?</p>}
           </div>
         )}
 
@@ -554,7 +717,7 @@ export function App() {
                     /[─│┌┐└┘├┤┬┴┼█▓░═║╔╗╚╝╠╣╦╩╬]/.test(m.text)
                       ? <pre className="terminal-output">{m.text}</pre>
                       : <MemoMarkdown text={m.text} />}
-                  {!tab.isRunning && m.role !== 'system' && <MessageActions msg={m} idx={i} onRetry={retryMessage} />}
+                  {!tab.isRunning && m.role !== 'system' && <MessageActions msg={m} idx={i} onRetry={retryMessage} onRewind={() => setShowRewind(true)} isLastUser={m.role === 'user' && !tab.messages.slice(i + 1).some(x => x.role === 'user')} canRetry={tab.lastStopReason !== undefined && tab.lastStopReason !== 'end_turn'} />}
                 </div>
               );
               i++;
@@ -564,6 +727,19 @@ export function App() {
         })()}
 
         {tab.thinking && <ThinkingBlock thinking={tab.thinking} onToggle={() => updateTab(activeTabId, t => ({ ...t, thinking: t.thinking ? { ...t.thinking, collapsed: !t.thinking.collapsed } : null }))} />}
+
+        {tab.plan && tab.plan.length > 0 && (
+          <div className="plan-block">
+            <div className="plan-header">Plan</div>
+            {tab.plan.map((entry, i) => (
+              <div key={i} className={`plan-entry plan-${entry.status}`}>
+                <span className="plan-icon">{entry.status === 'completed' ? '✓' : entry.status === 'in_progress' ? '▶' : '○'}</span>
+                <span className="plan-content">{entry.content}</span>
+                {entry.priority === 'high' && <span className="plan-priority">!</span>}
+              </div>
+            ))}
+          </div>
+        )}
 
         {tab.isRunning && !tab.thinking && (
           <div className="waiting-indicator">
@@ -588,6 +764,8 @@ export function App() {
         {showScrollBtn && <button className="scroll-bottom-btn" onClick={scrollToBottom}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg></button>}
       </div>
 
+      {showRewind && <RewindTimeline messages={tab.messages} onRewind={handleRewind} onClose={() => setShowRewind(false)} />}
+
       {debugEnabled && protocolLogs.length > 0 && <div className="debug-panel">
         <div className="debug-header"><span>Protocol Log</span><button onClick={() => setProtocolLogs([])}>Clear</button></div>
         <div className="debug-logs">
@@ -598,10 +776,19 @@ export function App() {
         {tab.queue.length > 0 && <div className="queue-list">
           {tab.queue.map((q, i) => (
             <div key={i} className="queue-item">
+              <span className="queue-num">{i + 1}</span>
+              <button className="queue-move" disabled={i === 0} onClick={() => updateTab(activeTabId, t => { const q = [...t.queue]; [q[i-1], q[i]] = [q[i], q[i-1]]; return { ...t, queue: q }; })} title="Move up">↑</button>
+              <button className="queue-move" disabled={i === tab.queue.length - 1} onClick={() => updateTab(activeTabId, t => { const q = [...t.queue]; [q[i], q[i+1]] = [q[i+1], q[i]]; return { ...t, queue: q }; })} title="Move down">↓</button>
               <input className="queue-edit" value={q} onChange={e => updateTab(activeTabId, t => ({ ...t, queue: t.queue.map((x, j) => j === i ? e.target.value : x) }))} />
-              <button className="queue-remove" onClick={() => updateTab(activeTabId, t => ({ ...t, queue: t.queue.filter((_, j) => j !== i) }))}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+              {i < tab.queue.length - 1 && <button className="queue-merge" onClick={() => updateTab(activeTabId, t => ({ ...t, queue: t.queue.filter((_, j) => j !== i + 1).map((x, j) => j === i ? x + '\n\n' + t.queue[i + 1] : x) }))} title="Merge with next">⊕</button>}
+              <button className="queue-remove" onClick={() => updateTab(activeTabId, t => ({ ...t, queue: t.queue.filter((_, j) => j !== i) }))} title="Remove"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
             </div>
           ))}
+          <div className="queue-actions">
+            <span className="queue-count">{tab.queue.length} queued</span>
+            <button className="queue-clear" onClick={() => updateTab(activeTabId, t => ({ ...t, queue: [] }))}>Clear all</button>
+            <button className="queue-send-now" onClick={() => send({ action: 'cancel', tabId: activeTabId })}>Send Now ⚡</button>
+          </div>
         </div>}
         {tab.metadata.contextUsagePercentage > 0 && <div className="context-meter">
           <svg className="context-pie" viewBox="0 0 36 36">
@@ -609,6 +796,7 @@ export function App() {
             <circle cx="18" cy="18" r="15.9" fill="none" strokeWidth="3" strokeDasharray={`${tab.metadata.contextUsagePercentage} ${100 - tab.metadata.contextUsagePercentage}`} strokeDashoffset="25" strokeLinecap="round" stroke={tab.metadata.contextUsagePercentage >= 90 ? 'var(--red)' : tab.metadata.contextUsagePercentage >= 70 ? 'var(--yellow)' : 'var(--accent)'} />
           </svg>
           <span className="context-meter-label">{Math.round(tab.metadata.contextUsagePercentage)}%</span>
+          {tab.metadata.contextUsagePercentage >= 50 && <button className="compact-btn" onClick={() => send({ action: 'prompt', tabId: activeTabId, text: '/compact' })} title="Compact context">⊘</button>}
         </div>}
         <div className="input-wrapper">
           {cmdFilter && <div className="cmd-popup">
@@ -631,7 +819,8 @@ export function App() {
           <textarea ref={textareaRef} value={input} onChange={e => handleInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Message Kiro... (/ for commands, ⌘T new tab, ⌘B sidebar)" rows={1} style={{ '--tab-color': `var(--ghost-${tabs.indexOf(tab) % 6})` } as React.CSSProperties} onPaste={e => { const items = e.clipboardData.items; for (const item of items) { if (item.type.startsWith('image/')) { const file = item.getAsFile(); if (file) { const reader = new FileReader(); reader.onload = () => { const b64 = (reader.result as string).split(',')[1]; setPendingImages(p => [...p, { data: b64, mimeType: file.type, name: file.name }]); }; reader.readAsDataURL(file); } } } }} />
           <div className="input-buttons">
             <label className="img-upload-btn" title="Attach image or file"><input type="file" accept="image/*,.txt,.md,.json,.ts,.tsx,.js,.jsx,.py,.rs,.go,.yaml,.yml,.toml,.csv,.xml,.html,.css,.sh,.sql,.log,.env,.cfg" multiple hidden onChange={e => { const files = e.target.files; if (!files) return; for (const file of files) { if (file.type.startsWith('image/')) { const reader = new FileReader(); reader.onload = () => { const b64 = (reader.result as string).split(',')[1]; setPendingImages(p => [...p, { data: b64, mimeType: file.type, name: file.name }]); }; reader.readAsDataURL(file); } else { const reader = new FileReader(); reader.onload = () => { setPendingFiles(p => [...p, { name: file.name, content: reader.result as string }]); }; reader.readAsText(file); } } e.target.value = ''; }} /><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></label>
-            <button className={`queue-toggle ${queueEnabled ? 'active' : ''}`} onClick={() => setQueueEnabled(q => !q)} title={queueEnabled ? 'Queue enabled' : 'Queue disabled'}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
+            <button className={`queue-toggle ${queueEnabled ? 'active' : ''}`} onClick={() => setQueueEnabled(q => !q)} title={queueEnabled ? 'Queue enabled' : 'Queue disabled'}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
+            {speechSupported && <button className={`mic-btn ${isRecording ? 'recording' : ''}`} onClick={isRecording ? stopVoice : startVoice} title={isRecording ? 'Click to stop' : 'Click to record'}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>}
             {tab.isRunning ? <button id="cancel-btn" onClick={() => send({ action: 'cancel', tabId: activeTabId })}><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
               : <button id="send-btn" disabled={(!input.trim() && !pendingImages.length && !pendingFiles.length) || !modes} onClick={handleSend}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>}
           </div>

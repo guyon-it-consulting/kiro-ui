@@ -11,6 +11,7 @@ export interface ToolEntry {
   expanded?: boolean;
   rawInput?: unknown;
   rawOutput?: unknown;
+  streamOutput?: string;
 }
 
 export interface ToolContent {
@@ -36,6 +37,7 @@ export interface ThinkingState {
 export interface TabState {
   id: string;
   name: string;
+  sessionId?: string;
   cwd?: string;
   messages: Msg[];
   thinking: ThinkingState | null;
@@ -44,11 +46,25 @@ export interface TabState {
   metadata: TabMetadata;
   queue: string[];
   stream: string;
+  lastStopReason?: string;
+  modes: ModesState | null;
+  models: ModelsState | null;
+  permPolicy: string;
+  effort?: string;
+  effortSupported?: boolean;
+  plan?: PlanEntry[];
+  activeFiles?: { path: string; line?: number; kind?: string }[];
 }
 
 export interface TabMetadata {
   contextUsagePercentage: number;
   turnDurationMs?: number;
+}
+
+export interface PlanEntry {
+  content: string;
+  priority: 'high' | 'medium' | 'low';
+  status: 'pending' | 'in_progress' | 'completed';
 }
 
 // --- ACP / Protocol types ---
@@ -68,6 +84,7 @@ export interface PermissionOption {
 export interface Mode {
   id: string;
   name: string;
+  description?: string;
 }
 
 export interface ModesState {
@@ -140,8 +157,7 @@ export type WsAction =
   | { action: 'permission_response'; tabId: string; requestId: string; optionId: string; title: string }
   | { action: 'new_chat'; tabId: string; cwd?: string }
   | { action: 'load_session'; tabId: string; sessionId: string }
-  | { action: 'list_sessions'; tabId: string }
-  | { action: 'session_delete'; sessionId: string }
+  | { action: 'list_sessions'; tabId: string; cwd?: string }
   | { action: 'command_options'; tabId: string; command: string; input: string }
   | { action: 'kiro_settings_list' }
   | { action: 'kiro_settings_set'; key: string; value: string }

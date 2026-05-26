@@ -5,7 +5,7 @@ import type { TabState, Msg } from './types';
 export type { TabState, Msg };
 
 export function newTab(id: string, name: string): TabState {
-  return { id, name, messages: [], thinking: null, permissions: [], isRunning: false, metadata: { contextUsagePercentage: 0 }, queue: [], stream: '' };
+  return { id, name, messages: [], thinking: null, permissions: [], isRunning: false, metadata: { contextUsagePercentage: 0 }, queue: [], stream: '', modes: null, models: null, permPolicy: 'ask' };
 }
 
 export function handleTurnEnd(tab: TabState): TabState {

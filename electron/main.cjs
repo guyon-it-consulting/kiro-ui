@@ -178,6 +178,12 @@ async function createWindow() {
 
   if (state.isMaximized) mainWindow.maximize();
 
+  // Grant microphone permission for voice input
+  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
+    if (permission === 'media' || permission === 'microphone') return callback(true);
+    callback(false);
+  });
+
   mainWindow.loadURL(`http://127.0.0.1:${SERVER_PORT}`);
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
@@ -214,6 +220,7 @@ async function createWindow() {
 }
 
 // --- App lifecycle ---
+app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', 'http://127.0.0.1');
 app.whenReady().then(async () => {
   try {
     await startServer();

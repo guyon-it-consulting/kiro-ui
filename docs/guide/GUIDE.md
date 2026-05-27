@@ -1,112 +1,180 @@
-# Kiro UI — Feature Guide
+# Kiro UI v1.1 — Feature Guide
 
-A visual walkthrough of Kiro UI's features.
+A complete visual walkthrough of every feature.
 
 ![Tour](tour.gif)
 
 ---
 
-## Initial load
+## 1. Empty State — Agent Description
 
-The app loads with a connected status, ready to chat. The sidebar shows conversation history.
+New session shows the active agent's name and description. The sidebar displays workspace path and session history.
 
-![Initial load](01-initial-load.png)
-
----
-
-## Agent selection
-
-Select from available agents. Each agent has different capabilities and specializations.
-
-![Agent selection](02-agent-selection.png)
+![Empty state](01-empty-state.png)
 
 ---
 
-## Model selection
+## 2. Per-Tab Configuration
 
-Choose the AI model — Claude Sonnet, Opus, Haiku, DeepSeek, and more.
+Each tab has independent settings: agent, model, permission policy. Changes only affect the active tab.
 
-![Model selection](03-model-selection.png)
-
----
-
-## Permission modes
-
-Three permission modes: **Ask** (safest), **Auto-reads** (reads auto-approved), **Allow all** (fastest).
-
-![Permission modes](04-permission-modes.png)
+![Tab config](02-tab-config.png)
 
 ---
 
-## Typing message
+## 3. Effort Control
 
-Type your message. Use Shift+Enter for new lines, Enter to send.
+Reasoning effort dropdown (low → max). Only appears when the current model supports it. Probed dynamically via `/effort`.
 
-![Typing message](05-typing-message.png)
-
----
-
-## Agent streaming
-
-The agent streams its response in real-time. A cancel button appears to stop generation.
-
-![Agent streaming](06-agent-streaming.png)
+![Effort control](03-effort-control.png)
 
 ---
 
-## Agent response
+## 4. Real-Time Streaming
 
-Completed response with full markdown rendering — code blocks, lists, and formatting.
+Responses stream with full markdown rendering. Cancel button (■) stops generation. Ghost mascot floats while working.
 
-![Agent response](07-agent-response.png)
-
----
-
-## Tool call pending
-
-When the agent uses tools, tool call blocks appear with a pending status.
-
-![Tool call pending](08-tool-call-pending.png)
+![Streaming](04-streaming.png)
 
 ---
 
-## Tool call expanded
+## 5. Tool Calls & File Follow-Along
 
-Click a tool block to expand it and see the full input/output, including file diffs.
+Tool blocks show agent actions with status. The **Files panel** (top-right) tracks which files are being read/edited in real-time.
 
-![Tool call expanded](09-tool-call-expanded.png)
-
----
-
-## Multi tab
-
-Each tab runs an independent agent session with its own context. Click + to add tabs.
-
-![Multi tab](10-multi-tab.png)
+![Tool calls](05-tool-calls.png)
 
 ---
 
-## Slash commands
+## 6. Tool Block Expanded — Diffs
 
-Type / to see available commands with autocomplete.
+Click to expand. File edits show side-by-side diffs. Clickable file paths open in your editor. Raw I/O for debugging.
 
-![Slash commands](11-slash-commands.png)
-
----
-
-## Light theme
-
-Toggle between dark and light themes. Preference is persisted.
-
-![Light theme](12-light-theme.png)
+![Tool expanded](06-tool-expanded.png)
 
 ---
 
-## Settings page
+## 7. Real-Time Shell Streaming
 
-Configure editor, workspace, permission policies, resource limits, and agent settings.
+Shell commands stream output line-by-line as they execute. Green terminal text inside the tool block.
 
-![Settings page](13-settings-page.png)
+![Shell streaming](07-shell-streaming.png)
 
 ---
 
+## 8. Context Usage Meter
+
+Pie chart shows context window consumption. At 50%+, compact button (⊘) appears to run `/compact`.
+
+![Context meter](08-context-meter.png)
+
+---
+
+## 9. Message Actions
+
+Hover any message: **Copy** on all, **Rewind** on user messages, **Retry** on failure only.
+
+![Message actions](09-message-actions.png)
+
+---
+
+## 10. Rewind — Conversation Branching
+
+Timeline picker shows all turns (newest-first, turn 1 excluded). Click to branch via `/rewind N`. Keeps messages up to that turn.
+
+![Rewind timeline](10-rewind-timeline.png)
+
+---
+
+## 11. Multi-Tab Sessions
+
+Each tab = one session. Independent agent, model, permissions. Tab names auto-sync from session titles. ⌘T to add.
+
+![Multi-tab](11-multi-tab.png)
+
+---
+
+## 12. Slash Commands
+
+Type `/` for autocomplete. Dynamic subcommand options fetched from agent. Includes `/rewind`, `/effort`, `/compact`, `/mcp`.
+
+![Slash commands](12-slash-commands.png)
+
+---
+
+## 13. Message Queue — Stacking
+
+Enable queue (layers icon). Type messages while agent is working — they stack up with edit/delete controls.
+
+![Queue messages](13-queue-messages.png)
+
+---
+
+## 14. Message Queue — Reorder & Merge
+
+Reorder with ↑↓ arrows. Merge adjacent messages with ⊕. Clear all or Send Now to interrupt current turn.
+
+![Queue reorder](14-queue-reorder.png)
+
+---
+
+## 15. Chat Export
+
+Download button (↓) exports the conversation as a formatted `.md` file named after the session.
+
+![Export](15-export.png)
+
+---
+
+## 16. Voice Input
+
+Microphone button for speech-to-text (Web Speech API). Toggle mode: click to start, click to stop. Requires HTTPS or Electron.
+
+![Voice input](16-voice-input.png)
+
+---
+
+## 17. Keyboard Shortcuts
+
+⌘N new chat, ⌘T new tab, ⌘B toggle sidebar, ⌘L clear, Escape cancel.
+
+![Sidebar collapsed](17-sidebar-collapsed.png)
+
+---
+
+## 18. Session History
+
+Workspace-scoped. Open sessions marked with purple dot (●). Title filter for search. Click to open in new tab.
+
+![Session history](18-session-history.png)
+
+---
+
+## 19. Light Theme
+
+Sun/moon toggle. Persists across sessions and reloads.
+
+![Light theme](19-light-theme.png)
+
+---
+
+## 20. Settings
+
+Editor integration (VS Code, Cursor, IntelliJ), protocol debug panel, workspace config, agent settings.
+
+![Settings](20-settings.png)
+
+---
+
+## Additional Features
+
+| Feature | Description |
+|---------|-------------|
+| Agent Plan | Live task list (○ pending, ▶ in-progress, ✓ completed) during multi-step tasks |
+| MCP Server Panel | Status dots, tool lists, OAuth authentication flow with persistent banner |
+| Permission Prompts | Interactive allow/deny buttons in "Ask" mode |
+| Retry on Failure | Retry button on last message when turn fails (cancelled/error/max_tokens) |
+| Protocol Debug | Raw JSON-RPC traffic + extension notification logging |
+| Crash Auto-Reconnect | Detects dead agent, auto-restarts within 1 second |
+| TCP Transport | Connect to remote `kiro-cli acp` over TCP (for Docker/remote) |
+| Electron Desktop | Native macOS/Windows/Linux app with voice support |

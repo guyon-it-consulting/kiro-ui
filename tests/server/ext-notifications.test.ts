@@ -102,6 +102,6 @@ describe('extNotification handler', () => {
 
   it('unknown method does nothing', () => {
     handleExtNotification('_kiro.dev/unknown', {}, emit, 'tab-1');
-    expect(emit).not.toHaveBeenCalled();
+    expect(emit).toHaveBeenCalledWith({ type: 'ProtocolLog', tabId: 'tab-1', dir: 'in', msg: 'ext: _kiro.dev/unknown {}' });
   });
 });

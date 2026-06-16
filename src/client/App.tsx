@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, useReducer } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { ErrorBoundary } from './components';
@@ -29,11 +29,14 @@ hljs.registerLanguage('markdown', markdown);
 
 import { useWebSocket } from './useWebSocket';
 import { apiFetch } from './apiFetch';
+import { tabReducer, newTab } from './tabReducer';
+import type { TabsState } from './tabReducer';
 import { ToolBlock, ToolGroup } from './ToolBlock';
 import { ThinkingBlock } from './ThinkingBlock';
 import { MessageActions } from './MessageActions';
 import { RewindTimeline } from './RewindTimeline';
 import { McpPanel } from './McpPanel';
+import { SubagentPanel } from './SubagentPanel';
 import { SettingsPage } from './SettingsPage';
 import { PanelMessage } from './PanelMessage';
 import type { TabState, Msg, ModesState, ModelsState, McpServer, McpTool, SlashCommand, SessionEntry, Toast, ProtocolLog, PendingImage, PendingFile, EditorType, CommandOption, PlanEntry, TabMetadata, GoalState } from './types';
@@ -44,14 +47,13 @@ marked.setOptions({ breaks: true });
 // Module-level stream accumulator for suggestions (outside React state)
 const streamAccumulator: Record<string, string[]> = {};
 
-function newTab(id: string, name: string): TabState {
-  return { id, name, messages: [], thinking: null, permissions: [], isRunning: false, metadata: { contextUsagePercentage: 0 }, queue: [], stream: '', modes: null, models: null, permPolicy: 'ask' };
-}
-
 export function App() {
-  const [tabs, setTabs] = useState<TabState[]>([newTab('tab-1', 'New Chat')]);
-  const [activeTabId, setActiveTabId] = useState('tab-1');
-  const [tabCounter, setTabCounter] = useState(1);
+  const [tabsState, dispatch] = useReducer(tabReducer, {
+    tabs: [newTab('tab-1', 'New Chat')],
+    activeTabId: 'tab-1',
+    tabCounter: 1,
+  } as TabsState);
+  const { tabs, activeTabId, tabCounter } = tabsState;
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [allTools, setAllTools] = useState<McpTool[]>([]);
@@ -87,7 +89,7 @@ export function App() {
   const sendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
 
   const updateTab = useCallback((tabId: string, fn: (t: TabState) => TabState) => {
-    setTabs(ts => ts.map(t => t.id === tabId ? fn(t) : t));
+    dispatch({ type: 'UPDATE_TAB', tabId, fn });
   }, []);
 
   const tab = tabs.find(t => t.id === activeTabId) || tabs[0];
@@ -266,12 +268,12 @@ export function App() {
         const sessionList = (data.sessions as { value: string; label: string; description?: string }[]).map(s => ({ id: s.value, title: s.label, description: s.description }));
         setSessions(sessionList);
         // Sync tab names from session titles
-        setTabs(ts => ts.map(t => {
+        dispatch({ type: 'UPDATE_TABS', fn: ts => ts.map(t => {
           if (!t.sessionId) return t;
           const match = sessionList.find(s => s.id === t.sessionId);
           if (match?.title && match.title !== t.name && !match.title.includes('title not available')) return { ...t, name: match.title };
           return t;
-        }));
+        }) });
         break;
       }
       case 'CommandOptions':
@@ -369,16 +371,29 @@ export function App() {
         if (data.sessions) {
           const sessionList = (data.sessions as { sessionId: string; title?: string; name?: string }[]).map(s => ({ id: s.sessionId, title: s.title || s.name || '', description: '' }));
           setSessions(sessionList);
-          setTabs(ts => ts.map(t => {
+          dispatch({ type: 'UPDATE_TABS', fn: ts => ts.map(t => {
             if (!t.sessionId) return t;
             const match = sessionList.find(s => s.id === t.sessionId);
             if (match?.title && match.title !== t.name && !match.title.includes('title not available')) return { ...t, name: match.title };
             return t;
-          }));
+          }) });
         }
         break;
       case 'InboxNotification':
         addToast(`Message from subagent: ${(data.message as string) || 'New notification'}`, 'info');
+        break;
+      case 'SubagentListUpdate':
+        updateTab(tid, t => {
+          const subagents = ((data.subagents as any[]) || []).map((s: any) => ({ sessionId: s.sessionId, name: s.name, role: s.role, status: s.status || 'pending', dependsOn: s.dependsOn, loopIteration: s.loopIteration }));
+          const pending = ((data.pendingStages as any[]) || []).map((s: any) => ({ sessionId: s.name || s.sessionId || '', name: s.name, role: s.role, status: 'pending' as const }));
+          return { ...t, subagents: [...subagents, ...pending] };
+        });
+        break;
+      case 'SessionActivity':
+        updateTab(tid, t => {
+          const activity = { ...(t.subagentActivity || {}), [data.sessionId as string]: { event: (data.event as any)?.title || (data.event as string) || '', timestamp: Date.now() } };
+          return { ...t, subagentActivity: activity };
+        });
         break;
       case 'RetryWarning':
         addToast(`Retrying (${data.attempt}/${data.maxAttempts}) in ${data.delaySecs}s...`, 'warning');
@@ -463,14 +478,11 @@ export function App() {
   function loadSession(id: string, title?: string) {
     // If this session is already open in a tab, just focus it
     const existing = tabs.find(t => t.sessionId === id);
-    if (existing) { setActiveTabId(existing.id); return; }
+    if (existing) { dispatch({ type: 'SET_ACTIVE_TAB', tabId: existing.id }); return; }
     // Open in a new tab
-    const num = tabCounter + 1;
-    setTabCounter(num);
-    const tabId = `tab-${num}`;
+    const tabId = `tab-${tabCounter + 1}`;
     const t = { ...newTab(tabId, title || 'Loading...'), isRunning: true, cwd: tab.cwd };
-    setTabs(ts => [...ts, t]);
-    setActiveTabId(tabId);
+    dispatch({ type: 'ADD_TAB', tab: t });
     send({ action: 'load_session', tabId, sessionId: id });
   }
 
@@ -589,19 +601,15 @@ export function App() {
   }
 
   function addTab() {
-    const num = tabCounter + 1;
-    setTabCounter(num);
-    const id = `tab-${num}`;
-    setTabs(ts => [...ts, { ...newTab(id, 'New Chat'), cwd: tab.cwd }]);
-    setActiveTabId(id);
+    const id = `tab-${tabCounter + 1}`;
+    dispatch({ type: 'ADD_TAB', tab: { ...newTab(id, 'New Chat'), cwd: tab.cwd } });
     send({ action: 'new_tab', tabId: id, cwd: tab.cwd });
   }
 
   function closeTab(id: string) {
     if (tabs.length <= 1) return;
     send({ action: 'close_tab', tabId: id });
-    setTabs(ts => ts.filter(t => t.id !== id));
-    if (activeTabId === id) setActiveTabId(tabs.find(t => t.id !== id)!.id);
+    dispatch({ type: 'CLOSE_TAB', tabId: id });
   }
 
   function scrollToBottom() { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }
@@ -661,7 +669,7 @@ export function App() {
 
       <div className="tab-bar">
         {tabs.map((t, idx) => (
-          <div key={t.id} className={`tab ${t.id === activeTabId ? 'active' : ''} ${t.isRunning ? 'running' : ''}`} onClick={() => setActiveTabId(t.id)}>
+          <div key={t.id} className={`tab ${t.id === activeTabId ? 'active' : ''} ${t.isRunning ? 'running' : ''}`} onClick={() => dispatch({ type: 'SET_ACTIVE_TAB', tabId: t.id })}>
             <span className={`tab-ghost ${t.isRunning ? 'floating' : t.id === activeTabId ? 'active-idle' : 'sleeping'}`} style={{ '--ghost-color': `var(--ghost-${idx % 6})` } as React.CSSProperties}>
               <svg viewBox="0 0 24 24" fill="none"><path d="M7.5 16.5c-1.8 4-0.3 5.2 2.5 3.3 0.8 2.6 3.7 1.6 4.8 0 2.5-4.5 1.5-9.1 1.3-10 -1.8-6.4-10.7-6.4-12.2 0-0.4 1.1-0.4 2.4-0.6 3.7-0.1 0.7-0.2 1.1-0.4 1.8-0.2 0.4-0.4 0.8-0.7 1.4-0.5 0.9-0.3 2.8 2.3 1.8l0.2-0.1z" fill="currentColor" stroke="var(--ghost-color)" strokeWidth="1.5"/><ellipse cx="12.5" cy="9.5" rx="0.9" ry="1.3" fill="var(--surface)"/><ellipse cx="15.5" cy="9.5" rx="0.9" ry="1.3" fill="var(--surface)"/></svg>
             </span>
@@ -803,6 +811,7 @@ export function App() {
         </div>
       </div>}
       <div className="input-area">
+        {tab.subagents && tab.subagents.length > 0 && <SubagentPanel subagents={tab.subagents} activity={tab.subagentActivity} />}
         {tab.suggestions && tab.suggestions.length > 0 && !tab.isRunning && <div className="suggestions">
           {tab.suggestions.map((s, i) => (
             <button key={i} className="suggestion-btn" onClick={() => handleSendText(s)}>{s}</button>

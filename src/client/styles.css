@@ -298,6 +298,22 @@ textarea:disabled { opacity: 0.5; cursor: not-allowed; }
 .goal-text { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .goal-cancel { margin-left: auto; background: none; border: 1px solid var(--border); color: var(--text-muted); font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; }
 .goal-cancel:hover { color: var(--text); border-color: var(--text-muted); }
+/* Subagent panel */
+.subagent-panel { max-width: 740px; width: 100%; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; font-size: 12px; }
+.subagent-panel.done { opacity: 0.7; }
+.subagent-header { padding: 6px 12px; background: var(--surface-1); cursor: pointer; font-weight: 600; color: var(--text-muted); }
+.subagent-header:hover { background: var(--surface-2); }
+.subagent-stages { display: flex; flex-direction: column; }
+.subagent-stage { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-top: 1px solid var(--border); }
+.subagent-stage.running { background: var(--accent-soft); }
+.subagent-stage.failed { background: color-mix(in srgb, var(--red) 8%, transparent); }
+.subagent-icon { width: 16px; text-align: center; }
+.subagent-stage.running .subagent-icon { animation: spin 1s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.subagent-name { font-weight: 500; color: var(--text); }
+.subagent-role { color: var(--text-dim); font-style: italic; }
+.subagent-loop { color: var(--accent); font-size: 11px; }
+.subagent-activity { color: var(--text-dim); font-size: 11px; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
 .queue-list { max-width: 740px; width: 100%; margin-bottom: 6px; display: flex; flex-direction: column; gap: 4px; }
 .queue-item { display: flex; gap: 4px; align-items: center; }
 .queue-num { font-size: 11px; color: var(--text-dim); width: 16px; text-align: center; flex-shrink: 0; }

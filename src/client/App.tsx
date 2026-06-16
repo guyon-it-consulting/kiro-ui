@@ -32,6 +32,8 @@ import { apiFetch } from './apiFetch';
 import { tabReducer, newTab } from './tabReducer';
 import type { TabsState } from './tabReducer';
 import { useMessageHandler } from './useMessageHandler';
+import { AppContext } from './AppContext';
+import type { AppContextValue } from './AppContext';
 import { ToolBlock, ToolGroup } from './ToolBlock';
 import { ThinkingBlock } from './ThinkingBlock';
 import { MessageActions } from './MessageActions';
@@ -324,7 +326,14 @@ export function App() {
   const hasMessages = tab.messages.length > 0 || tab.thinking;
   const isLoading = status === 'connecting' && !modes;
 
-  return <ErrorBoundary><>
+  const ctx: AppContextValue = useMemo(() => ({
+    tabs, activeTabId, tab, dispatch, updateTab, send,
+    modes, models, permPolicy, editor,
+    mcpServers, allTools, oauthPending, commands, sessions,
+    addToast, addTab, closeTab, loadSession,
+  }), [tabs, activeTabId, tab, dispatch, updateTab, send, modes, models, permPolicy, editor, mcpServers, allTools, oauthPending, commands, sessions, addToast, addTab, closeTab, loadSession]);
+
+  return <AppContext.Provider value={ctx}><ErrorBoundary><>
     {toasts.length > 0 && <div className="toast-container">
       {toasts.map(t => <div key={t.id} className={`toast toast-${t.type}`}>{t.text}<button className="toast-close" onClick={() => setToasts(ts => ts.filter(x => x.id !== t.id))}>✕</button></div>)}
     </div>}
@@ -584,7 +593,7 @@ export function App() {
       </div>
     </>}
     </div>
-  </></ErrorBoundary>;
+  </></ErrorBoundary></AppContext.Provider>;
 }
 
 const MemoMarkdown = ({ text }: { text: string }) => {

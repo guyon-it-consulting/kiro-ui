@@ -9,13 +9,6 @@ async function waitForTurnEnd(page: Page) {
   await expect(page.locator('#send-btn')).toBeVisible({ timeout: 90000 });
 }
 
-async function enableQueue(page: Page) {
-  const toggle = page.locator('.queue-toggle');
-  if (!(await toggle.evaluate(el => el.classList.contains('active')))) {
-    await toggle.click();
-  }
-}
-
 async function sendAndWait(page: Page, text: string) {
   const textarea = page.locator('textarea');
   await textarea.fill(text);
@@ -38,7 +31,6 @@ test.describe('Enhanced Message Queue', () => {
 
   test('messages queue while agent is running', async ({ page }) => {
     test.skip(!(await isConnected(page)), 'Agent not connected');
-    await enableQueue(page);
 
     // Send first message to start agent
     const textarea = page.locator('textarea');
@@ -58,7 +50,6 @@ test.describe('Enhanced Message Queue', () => {
 
   test('edit queued message', async ({ page }) => {
     test.skip(!(await isConnected(page)), 'Agent not connected');
-    await enableQueue(page);
 
     const textarea = page.locator('textarea');
     await textarea.fill('Start task');
@@ -76,7 +67,6 @@ test.describe('Enhanced Message Queue', () => {
 
   test('delete queued message', async ({ page }) => {
     test.skip(!(await isConnected(page)), 'Agent not connected');
-    await enableQueue(page);
 
     const textarea = page.locator('textarea');
     await textarea.fill('Start task');
@@ -94,7 +84,6 @@ test.describe('Enhanced Message Queue', () => {
 
   test('reorder queued messages with arrows', async ({ page }) => {
     test.skip(!(await isConnected(page)), 'Agent not connected');
-    await enableQueue(page);
 
     const textarea = page.locator('textarea');
     await textarea.fill('Write a detailed paragraph about the history of the internet from 1960 to 2020');
@@ -120,7 +109,6 @@ test.describe('Enhanced Message Queue', () => {
 
   test('merge two queued messages', async ({ page }) => {
     test.skip(!(await isConnected(page)), 'Agent not connected');
-    await enableQueue(page);
 
     const textarea = page.locator('textarea');
     await textarea.fill('Write a detailed paragraph about the history of the internet from 1960 to 2020');
@@ -146,7 +134,6 @@ test.describe('Enhanced Message Queue', () => {
 
   test('clear all queued messages', async ({ page }) => {
     test.skip(!(await isConnected(page)), 'Agent not connected');
-    await enableQueue(page);
 
     const textarea = page.locator('textarea');
     await textarea.fill('Start task');
@@ -165,7 +152,6 @@ test.describe('Enhanced Message Queue', () => {
 
   test('send now cancels current and sends queued', async ({ page }) => {
     test.skip(!(await isConnected(page)), 'Agent not connected');
-    await enableQueue(page);
 
     const textarea = page.locator('textarea');
     await textarea.fill('Write a long detailed essay about computing');
@@ -190,7 +176,6 @@ test.describe('Enhanced Message Queue', () => {
 
   test('queued messages sent one by one', async ({ page }) => {
     test.skip(!(await isConnected(page)), 'Agent not connected');
-    await enableQueue(page);
 
     const textarea = page.locator('textarea');
     await textarea.fill('Say the number 1');
@@ -214,7 +199,6 @@ test.describe('Enhanced Message Queue', () => {
 
   test('queue count shows correct number', async ({ page }) => {
     test.skip(!(await isConnected(page)), 'Agent not connected');
-    await enableQueue(page);
 
     const textarea = page.locator('textarea');
     await textarea.fill('Start');

@@ -15,6 +15,8 @@
   - `ndJsonStream` for stdio transport
   - `Client` interface: `requestPermission`, `sessionUpdate`, `extNotification`
 - Child process spawning `kiro-cli acp` per WebSocket connection (one per tab)
+- @aws-sdk/client-bedrock + @aws-sdk/client-bedrock-runtime — Follow-up suggestions via Amazon Bedrock
+- @aws-sdk/credential-providers — AWS credential chain (profiles, env, etc.)
 
 ## Frontend
 

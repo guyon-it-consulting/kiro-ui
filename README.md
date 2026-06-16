@@ -2,7 +2,7 @@
 
 A browser-based chat interface for [Kiro CLI](https://kiro.dev/cli/), connected via the Agent Client Protocol (ACP).
 
-![Dark theme](https://img.shields.io/badge/theme-dark%20%2F%20light-9046ff) ![Tests](https://img.shields.io/badge/tests-160%20passing-34d399) ![Coverage](https://img.shields.io/badge/coverage-84%25-34d399)
+![Dark theme](https://img.shields.io/badge/theme-dark%20%2F%20light-9046ff) ![Tests](https://img.shields.io/badge/tests-198%20passing-34d399) ![Coverage](https://img.shields.io/badge/coverage-84%25-34d399)
 
 <p align="center">
   <img src="docs/guide/tour.gif" alt="Kiro UI Demo" width="720">
@@ -45,13 +45,15 @@ Kiro CLI is powerful — but the terminal isn't for everyone. Kiro UI gives deve
 - **Conversation branching** — `/rewind` with visual timeline picker, fork from any turn
 - **Per-tab config** — Agent, model, permissions, effort level per session
 - **Effort control** — Reasoning effort dropdown (probes model support dynamically)
-- **Enhanced message queue** — Reorder, merge, edit, delete, send now
+- **Enhanced message queue** — Reorder, merge, edit, delete, send now (always-on)
+- **Follow-up suggestions** — AI-generated next actions via Amazon Bedrock after each turn
+- **Goal iterations** — `/goal` command with iteration banner and progress tracking
+- **Metering display** — Cumulative token usage and cost tracking per session
 - **Image & file attachments** — Paste, upload, preview before sending
-- **Voice input** — Speech-to-text via Web Speech API (Electron/HTTPS)
 - **Chat export** — Download conversation as markdown
 - **Context usage meter** — Pie chart with compact button at 50%+
 - **Session history** — Workspace-scoped, title filter, auto-sync tab names
-- **Settings page** — Editor integration, workspace directory, trust rules, Kiro agent settings
+- **Settings page** — Editor integration, workspace directory, trust rules, suggestions config, Kiro agent settings
 - **Protocol debug panel** — Raw JSON-RPC traffic inspection
 - **Crash auto-reconnect** — Detects dead agent, auto-restarts within 1s
 
@@ -177,7 +179,7 @@ Pair with TCP transport to connect to a remote agent without installing kiro-cli
 
 ## Tech Stack
 
-- **Backend**: Express 4, ws, @agentclientprotocol/sdk, TypeScript
+- **Backend**: Express 4, ws, @agentclientprotocol/sdk, @aws-sdk/client-bedrock, TypeScript
 - **Frontend**: React 19, Vite 6, marked.js, highlight.js, react-diff-viewer-continued
 - **Testing**: Vitest, React Testing Library, Playwright
 - **Quality**: TypeScript strict mode, ESLint, CSP headers

@@ -54,11 +54,22 @@ export interface TabState {
   effortSupported?: boolean;
   plan?: PlanEntry[];
   activeFiles?: { path: string; line?: number; kind?: string }[];
+  suggestions?: string[];
+  goal?: GoalState | null;
+}
+
+export interface GoalState {
+  text: string;
+  maxIterations: number;
+  currentIteration: number;
+  status: 'active' | 'complete' | 'incomplete';
 }
 
 export interface TabMetadata {
   contextUsagePercentage: number;
   turnDurationMs?: number;
+  meteringUsage?: { inputTokens?: number; outputTokens?: number; cost?: number };
+  cumulativeUsage?: { inputTokens: number; outputTokens: number; cost: number };
 }
 
 export interface PlanEntry {

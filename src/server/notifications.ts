@@ -56,6 +56,9 @@ export function handleExtNotification(method: string, params: any, emit: (data: 
         emit({ type: 'RetryWarning', tabId, attempt: p.update.attempt, maxAttempts: p.update.maxAttempts, delaySecs: p.update.delaySecs, message: p.update.message });
       }
       break;
+    case '_kiro.dev/goal/status':
+      emit({ type: 'GoalStatus', tabId, currentIteration: p.currentIteration, maxIterations: p.maxIterations, status: p.status });
+      break;
     default:
       emit({ type: 'ProtocolLog', tabId, dir: 'in', msg: `ext: ${method} ${JSON.stringify(params).slice(0, 200)}` });
       break;

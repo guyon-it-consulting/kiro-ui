@@ -23,6 +23,8 @@ export function PanelMessage({ type, metadata, modes, commands, mcpServers, allT
       <div className="panel-rows">
         <div className="panel-row"><span>Active agent</span><span>{agentName}</span></div>
         {metadata.turnDurationMs != null && <div className="panel-row"><span>Last turn</span><span>{(metadata.turnDurationMs / 1000).toFixed(1)}s</span></div>}
+        {metadata.cumulativeUsage && metadata.cumulativeUsage.inputTokens > 0 && <div className="panel-row"><span>Tokens (in / out)</span><span>{metadata.cumulativeUsage.inputTokens.toLocaleString()} / {metadata.cumulativeUsage.outputTokens.toLocaleString()}</span></div>}
+        {metadata.cumulativeUsage?.cost ? <div className="panel-row"><span>Session cost</span><span>${metadata.cumulativeUsage.cost.toFixed(4)}</span></div> : null}
       </div>
       <div className="panel-tips">
         <code>/compact</code> Summarize history · <code>/clear</code> Erase history

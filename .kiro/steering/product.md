@@ -28,15 +28,17 @@ Provide a web/desktop UI alternative to the terminal for interacting with Kiro's
 - Keyboard shortcuts (⌘N new, ⌘L clear, ⌘B sidebar, ⌘T new tab)
 - Message actions: copy, retry (on failure only), rewind
 - Enhanced message queue: reorder, merge, edit, delete, send now
+- Follow-up suggestions: AI-generated next actions via Amazon Bedrock after each turn
+- Goal iterations: /goal command with iteration banner and progress tracking
+- Metering display: Cumulative token usage and cost tracking per session
 - MCP server panel with live status and OAuth flow
 - File follow-along panel (tracks files being edited in real-time)
 - Image & file attachments (paste, upload)
 - Context usage meter with compact button (at 50%+)
 - Effort control dropdown (probes model support dynamically)
-- Voice input (Web Speech API, toggle mode)
 - Chat export to markdown
 - Agent description in empty state
-- Settings page (editor, workspace, trust rules, limits, agent settings, debug)
+- Settings page (editor, workspace, trust rules, limits, suggestions config, agent settings, debug)
 - Protocol debug panel (raw JSON-RPC traffic with ext notification logging)
 - Crash auto-reconnect with auto-restart
 - Cross-platform: macOS, Windows, Linux (web + Electron)

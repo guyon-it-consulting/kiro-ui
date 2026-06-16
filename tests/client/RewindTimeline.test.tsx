@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { RewindTimeline } from '../../src/client/RewindTimeline';
+import { RewindTimeline, getTurnSummary } from '../../src/client/RewindTimeline';
 import type { Msg } from '../../src/client/types';
 
 function makeMessages(...userTexts: string[]): Msg[] {
@@ -130,5 +130,151 @@ describe('RewindTimeline', () => {
 
     fireEvent.click(screen.getByText('Turn 2').closest('.rewind-turn')!);
     expect(onRewind).toHaveBeenCalledWith(2); // index of 2nd user msg
+  });
+});
+
+describe('getTurnSummary', () => {
+  it('counts tool calls between user messages', () => {
+    const msgs: Msg[] = [
+      { role: 'user', text: 'Do something' },
+      { role: 'tool', text: '', tool: { toolCallId: '1', title: 'Read file', status: 'done', expanded: false } },
+      { role: 'tool', text: '', tool: { toolCallId: '2', title: 'Write file', status: 'done', expanded: false } },
+      { role: 'tool', text: '', tool: { toolCallId: '3', title: 'Search', status: 'done', expanded: false } },
+      { role: 'user', text: 'Next' },
+    ];
+    const summary = getTurnSummary(msgs, 0, 4);
+    expect(summary.tools).toBe(3);
+  });
+
+  it('extracts unique file basenames from tool content paths', () => {
+    const msgs: Msg[] = [
+      { role: 'user', text: 'Edit files' },
+      { role: 'tool', text: '', tool: { toolCallId: '1', title: 'Write', status: 'done', expanded: false, content: [{ type: 'diff', path: '/src/App.tsx' }] } },
+      { role: 'tool', text: '', tool: { toolCallId: '2', title: 'Write', status: 'done', expanded: false, content: [{ type: 'diff', path: '/src/styles.css' }] } },
+      { role: 'tool', text: '', tool: { toolCallId: '3', title: 'Write', status: 'done', expanded: false, content: [{ type: 'diff', path: '/src/App.tsx' }] } },
+      { role: 'user', text: 'Next' },
+    ];
+    const summary = getTurnSummary(msgs, 0, 4);
+    expect(summary.files).toEqual(['App.tsx', 'styles.css']);
+  });
+
+  it('detects shell commands by kind', () => {
+    const msgs: Msg[] = [
+      { role: 'user', text: 'Run tests' },
+      { role: 'tool', text: '', tool: { toolCallId: '1', title: 'npm test', kind: 'shell', status: 'done', expanded: false } },
+      { role: 'tool', text: '', tool: { toolCallId: '2', title: 'Read file', status: 'done', expanded: false } },
+      { role: 'user', text: 'Next' },
+    ];
+    const summary = getTurnSummary(msgs, 0, 3);
+    expect(summary.commands).toBe(1);
+  });
+
+  it('detects commands by title prefix', () => {
+    const msgs: Msg[] = [
+      { role: 'user', text: 'Build' },
+      { role: 'tool', text: '', tool: { toolCallId: '1', title: 'bash npm run build', status: 'done', expanded: false } },
+      { role: 'tool', text: '', tool: { toolCallId: '2', title: 'Execute git status', status: 'done', expanded: false } },
+      { role: 'user', text: 'Next' },
+    ];
+    const summary = getTurnSummary(msgs, 0, 3);
+    expect(summary.commands).toBe(2);
+  });
+
+  it('returns zeros for turn with no tools', () => {
+    const msgs: Msg[] = [
+      { role: 'user', text: 'Hello' },
+      { role: 'assistant', text: 'Hi there' },
+      { role: 'user', text: 'Next' },
+    ];
+    const summary = getTurnSummary(msgs, 0, 2);
+    expect(summary.tools).toBe(0);
+    expect(summary.files).toEqual([]);
+    expect(summary.commands).toBe(0);
+  });
+
+  it('handles last turn (no next user message)', () => {
+    const msgs: Msg[] = [
+      { role: 'user', text: 'Last turn' },
+      { role: 'tool', text: '', tool: { toolCallId: '1', title: 'Read', status: 'done', expanded: false, content: [{ type: 'text', path: '/foo/bar.ts' }] } },
+      { role: 'assistant', text: 'Done' },
+    ];
+    const summary = getTurnSummary(msgs, 0, undefined);
+    expect(summary.tools).toBe(1);
+    expect(summary.files).toEqual(['bar.ts']);
+  });
+
+  it('extracts file from title path pattern', () => {
+    const msgs: Msg[] = [
+      { role: 'user', text: 'Read' },
+      { role: 'tool', text: '', tool: { toolCallId: '1', title: 'Read /src/utils.ts', status: 'done', expanded: false } },
+    ];
+    const summary = getTurnSummary(msgs, 0, undefined);
+    expect(summary.files).toContain('utils.ts');
+  });
+});
+
+describe('RewindTimeline enriched rendering', () => {
+  it('shows tool count in summary for turn with tools', () => {
+    const msgs: Msg[] = [
+      { role: 'user', text: 'First' },
+      { role: 'assistant', text: 'ok' },
+      { role: 'user', text: 'Second' },
+      { role: 'tool', text: '', tool: { toolCallId: '1', title: 'Read', status: 'done', expanded: false } },
+      { role: 'tool', text: '', tool: { toolCallId: '2', title: 'Write', status: 'done', expanded: false } },
+      { role: 'assistant', text: 'Done' },
+    ];
+    render(<RewindTimeline messages={msgs} onRewind={() => {}} onClose={() => {}} />);
+    expect(screen.getByText(/2 tools/)).toBeInTheDocument();
+  });
+
+  it('shows files in summary', () => {
+    const msgs: Msg[] = [
+      { role: 'user', text: 'First' },
+      { role: 'assistant', text: 'ok' },
+      { role: 'user', text: 'Second' },
+      { role: 'tool', text: '', tool: { toolCallId: '1', title: 'Write', status: 'done', expanded: false, content: [{ type: 'diff', path: '/src/App.tsx' }] } },
+      { role: 'assistant', text: 'Done' },
+    ];
+    render(<RewindTimeline messages={msgs} onRewind={() => {}} onClose={() => {}} />);
+    expect(screen.getByText(/App\.tsx/)).toBeInTheDocument();
+  });
+
+  it('shows commands count in summary', () => {
+    const msgs: Msg[] = [
+      { role: 'user', text: 'First' },
+      { role: 'assistant', text: 'ok' },
+      { role: 'user', text: 'Build' },
+      { role: 'tool', text: '', tool: { toolCallId: '1', title: 'npm test', kind: 'shell', status: 'done', expanded: false } },
+      { role: 'assistant', text: 'Done' },
+    ];
+    render(<RewindTimeline messages={msgs} onRewind={() => {}} onClose={() => {}} />);
+    expect(screen.getByText(/1 command/)).toBeInTheDocument();
+  });
+
+  it('does not show summary for turn with no tools', () => {
+    const msgs: Msg[] = [
+      { role: 'user', text: 'First' },
+      { role: 'assistant', text: 'ok' },
+      { role: 'user', text: 'Second' },
+      { role: 'assistant', text: 'ok again' },
+    ];
+    render(<RewindTimeline messages={msgs} onRewind={() => {}} onClose={() => {}} />);
+    expect(screen.queryByText(/tools?/)).not.toBeInTheDocument();
+  });
+
+  it('shows +N more when more than 3 files', () => {
+    const msgs: Msg[] = [
+      { role: 'user', text: 'First' },
+      { role: 'assistant', text: 'ok' },
+      { role: 'user', text: 'Second' },
+      { role: 'tool', text: '', tool: { toolCallId: '1', title: 'W', status: 'done', expanded: false, content: [{ type: 'diff', path: '/a.ts' }] } },
+      { role: 'tool', text: '', tool: { toolCallId: '2', title: 'W', status: 'done', expanded: false, content: [{ type: 'diff', path: '/b.ts' }] } },
+      { role: 'tool', text: '', tool: { toolCallId: '3', title: 'W', status: 'done', expanded: false, content: [{ type: 'diff', path: '/c.ts' }] } },
+      { role: 'tool', text: '', tool: { toolCallId: '4', title: 'W', status: 'done', expanded: false, content: [{ type: 'diff', path: '/d.ts' }] } },
+      { role: 'tool', text: '', tool: { toolCallId: '5', title: 'W', status: 'done', expanded: false, content: [{ type: 'diff', path: '/e.ts' }] } },
+      { role: 'assistant', text: 'Done' },
+    ];
+    render(<RewindTimeline messages={msgs} onRewind={() => {}} onClose={() => {}} />);
+    expect(screen.getByText(/\+2/)).toBeInTheDocument();
   });
 });

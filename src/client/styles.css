@@ -103,7 +103,8 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-s
 /* Tab bar */
 .tab-bar { display: flex; align-items: center; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg); overflow-x: auto; }
 .tab-bar::-webkit-scrollbar { height: 0; }
-.tab { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 10px; font-size: 13px; font-weight: 450; color: var(--text-muted); cursor: pointer; white-space: nowrap; transition: all 0.15s; position: relative; }
+.tab { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 10px; font-size: 13px; font-weight: 450; color: var(--text-muted); cursor: pointer; white-space: nowrap; transition: all 0.15s; position: relative; max-width: 180px; }
+.tab .tab-name { overflow: hidden; text-overflow: ellipsis; }
 .tab:hover { background: var(--surface-2); color: var(--text); }
 .tab.active { background: var(--surface-2); color: var(--text); font-weight: 550; }
 .tab-close { background: none; border: none; color: var(--text-dim); font-size: 10px; cursor: pointer; padding: 2px 4px; border-radius: 4px; opacity: 0; transition: all 0.15s; }
@@ -262,7 +263,7 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-s
 /* Input area */
 .input-area { padding: 16px 24px 24px; display: flex; flex-direction: column; align-items: center; border-top: 1px solid var(--border); background: var(--surface); }
 .input-wrapper { max-width: 740px; width: 100%; position: relative; }
-textarea { width: 100%; padding: 14px 56px 14px 18px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; color: var(--text); font-size: 14px; font-family: inherit; resize: none; outline: none; min-height: 50px; max-height: 200px; line-height: 1.5; transition: border-color 0.2s, box-shadow 0.2s; scrollbar-width: none; }
+textarea { width: 100%; padding: 14px 80px 14px 18px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; color: var(--text); font-size: 14px; font-family: inherit; resize: none; outline: none; min-height: 50px; max-height: 200px; line-height: 1.5; transition: border-color 0.2s, box-shadow 0.2s; scrollbar-width: none; }
 textarea::-webkit-scrollbar { display: none; }
 textarea:focus { border-color: var(--tab-color, var(--accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tab-color, var(--accent)) 12%, transparent); }
 textarea::placeholder { color: var(--text-dim); }
@@ -274,8 +275,7 @@ textarea:disabled { opacity: 0.5; cursor: not-allowed; }
 #send-btn:hover:not(:disabled) { background: var(--accent-hover); transform: scale(1.05); }
 #cancel-btn { background: rgba(225, 29, 72, 0.8); color: #fff; }
 #cancel-btn:hover { background: rgba(225, 29, 72, 1); }
-.queue-toggle { background: var(--surface-2) !important; color: var(--text-dim) !important; font-size: 12px !important; border: 1px solid var(--border) !important; }
-.queue-toggle.active { background: var(--accent-soft) !important; color: var(--accent) !important; border-color: var(--accent) !important; }
+
 .img-upload-btn { width: 32px; height: 32px; border-radius: 10px; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; background: var(--surface-2); color: var(--text-dim); transition: all 0.15s; }
 .img-upload-btn:hover { color: var(--text); background: var(--border-hover); }
 .image-preview { display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
@@ -286,6 +286,18 @@ textarea:disabled { opacity: 0.5; cursor: not-allowed; }
 .file-chip-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-chip button { background: none; border: none; color: var(--text-dim); font-size: 11px; cursor: pointer; padding: 0 2px; }
 .file-chip button:hover { color: var(--red); }
+.suggestions { max-width: 740px; width: 100%; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.suggestion-btn { padding: 6px 12px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-muted); font-size: 13px; cursor: pointer; transition: all 0.15s; line-height: 1.3; text-align: left; }
+.suggestion-btn:hover { background: var(--surface-2); color: var(--text); border-color: var(--accent); }
+/* Goal banner */
+.goal-banner { max-width: 740px; width: 100%; margin-bottom: 6px; padding: 8px 12px; border-radius: 8px; display: flex; align-items: center; gap: 8px; font-size: 12px; background: var(--accent-soft); border: 1px solid var(--accent); }
+.goal-banner.complete { background: color-mix(in srgb, var(--green) 10%, transparent); border-color: var(--green); }
+.goal-banner.incomplete { background: color-mix(in srgb, var(--yellow) 10%, transparent); border-color: var(--yellow); }
+.goal-icon { font-size: 14px; }
+.goal-label { font-weight: 600; color: var(--text); white-space: nowrap; }
+.goal-text { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.goal-cancel { margin-left: auto; background: none; border: 1px solid var(--border); color: var(--text-muted); font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; }
+.goal-cancel:hover { color: var(--text); border-color: var(--text-muted); }
 .queue-list { max-width: 740px; width: 100%; margin-bottom: 6px; display: flex; flex-direction: column; gap: 4px; }
 .queue-item { display: flex; gap: 4px; align-items: center; }
 .queue-num { font-size: 11px; color: var(--text-dim); width: 16px; text-align: center; flex-shrink: 0; }
@@ -524,6 +536,18 @@ textarea:disabled { opacity: 0.5; cursor: not-allowed; }
   text-overflow: ellipsis;
 }
 
+.rewind-turn-summary {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rewind-files {
+  color: var(--text-muted);
+}
+
 .rewind-hint {
   font-size: 11px;
   color: var(--text-dim);
@@ -590,6 +614,8 @@ textarea:disabled { opacity: 0.5; cursor: not-allowed; }
 /* Export button */
 .export-btn { background: none; border: 1px solid var(--border); color: var(--text-muted); width: 28px; height: 28px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
 .export-btn:hover { background: var(--surface-2); color: var(--text); border-color: var(--border-hover); }
+.session-id-btn { background: none; border: 1px solid var(--border); color: var(--text-dim); height: 28px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 0 8px; font-size: 11px; font-family: monospace; transition: all 0.15s; }
+.session-id-btn:hover { background: var(--surface-2); color: var(--text-muted); border-color: var(--border-hover); }
 
 /* Tool stream output */
 .tool-stream { background: var(--code-bg); color: var(--green); font-size: 12px; font-family: 'JetBrains Mono', 'SF Mono', monospace; padding: 8px 12px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; margin-bottom: 8px; }
@@ -612,17 +638,12 @@ textarea:disabled { opacity: 0.5; cursor: not-allowed; }
 .plan-entry.plan-completed .plan-content { text-decoration: line-through; }
 .plan-priority { font-size: 11px; color: var(--yellow); font-weight: 700; }
 
-/* Voice input */
-.mic-btn { background: var(--surface-2) !important; border: 1px solid var(--border) !important; color: var(--text-muted) !important; width: 28px; height: 28px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
-.mic-btn:hover { background: var(--border-hover) !important; color: var(--text) !important; }
-.mic-btn.recording { background: var(--red) !important; border-color: var(--red) !important; color: white !important; animation: pulse-mic 1s infinite; }
-@keyframes pulse-mic { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-.voice-autosend { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); cursor: pointer; }
-.voice-autosend input { width: 12px; height: 12px; accent-color: var(--accent); }
+
 
 /* Compact button */
 .compact-btn { background: none; border: none; color: var(--text-dim); font-size: 14px; cursor: pointer; padding: 0 4px; border-radius: 4px; }
 .compact-btn:hover { color: var(--accent); }
+.metering-display { font-size: 11px; color: var(--text-dim); margin-left: 6px; cursor: default; }
 
 /* Side panels (MCP + Files) */
 .side-panels { position: absolute; top: 8px; right: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }

@@ -7,6 +7,40 @@ interface Props {
   onClose: () => void;
 }
 
+export interface TurnSummary {
+  tools: number;
+  files: string[];
+  commands: number;
+}
+
+export function getTurnSummary(messages: Msg[], turnIdx: number, nextTurnIdx: number | undefined): TurnSummary {
+  const slice = messages.slice(turnIdx + 1, nextTurnIdx);
+  const toolMsgs = slice.filter(m => m.role === 'tool' && m.tool);
+  const files = new Set<string>();
+  let commands = 0;
+
+  for (const m of toolMsgs) {
+    const t = m.tool!;
+    // Extract files from tool content paths
+    if (t.content) {
+      for (const c of t.content) {
+        if (c.path) files.add(c.path.split('/').pop() || c.path);
+      }
+    }
+    // Extract file from title if it looks like a path
+    if (t.title) {
+      const pathMatch = t.title.match(/(?:^|\s)((?:\/|\.\/|~\/)\S+)/);
+      if (pathMatch) files.add(pathMatch[1].split('/').pop() || pathMatch[1]);
+    }
+    // Detect commands
+    if (t.kind === 'shell' || /^(bash|shell|Execute|Run|npm|npx|git|cd )/i.test(t.title || '')) {
+      commands++;
+    }
+  }
+
+  return { tools: toolMsgs.length, files: [...files], commands };
+}
+
 export function RewindTimeline({ messages, onRewind, onClose }: Props) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
@@ -30,6 +64,10 @@ export function RewindTimeline({ messages, onRewind, onClose }: Props) {
         <div className="rewind-turns">
           {rewindableTurns.map(({ msg, idx }, i) => {
             const turnNum = userTurns.findIndex(t => t.idx === idx) + 1;
+            const turnPos = userTurns.findIndex(t => t.idx === idx);
+            const nextIdx = turnPos < userTurns.length - 1 ? userTurns[turnPos + 1].idx : undefined;
+            const summary = getTurnSummary(messages, idx, nextIdx);
+            const hasEnrichment = summary.tools > 0;
             return (
               <div
                 key={idx}
@@ -45,6 +83,11 @@ export function RewindTimeline({ messages, onRewind, onClose }: Props) {
                 <div className="rewind-turn-content">
                   <span className="rewind-turn-num">Turn {turnNum}</span>
                   <span className="rewind-turn-text">{msg.text.slice(0, 80)}{msg.text.length > 80 ? '…' : ''}</span>
+                  {hasEnrichment && <span className="rewind-turn-summary">
+                    {summary.tools} {summary.tools === 1 ? 'tool' : 'tools'}
+                    {summary.files.length > 0 && <> · {summary.files.length} {summary.files.length === 1 ? 'file' : 'files'}<span className="rewind-files"> ({summary.files.slice(0, 3).join(', ')}{summary.files.length > 3 ? `, +${summary.files.length - 3}` : ''})</span></>}
+                    {summary.commands > 0 && <> · {summary.commands} {summary.commands === 1 ? 'command' : 'commands'}</>}
+                  </span>}
                 </div>
               </div>
             );

@@ -10,6 +10,9 @@ import { randomBytes } from 'crypto';
 import { Writable, Readable } from 'stream';
 import * as net from 'net';
 import * as acp from '@agentclientprotocol/sdk';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { BedrockClient, ListFoundationModelsCommand, ListInferenceProfilesCommand } from '@aws-sdk/client-bedrock';
+import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { loadTrust, saveTrust, getTrustRules, setTrustRules } from './src/server/trust.js';
 import { resolvePermission, type PermPolicy } from './src/server/permissions.js';
 import { buildPrompt } from './src/server/prompt.js';
@@ -76,6 +79,80 @@ app.get('/api/trust', (_req, res) => res.json(getTrustRules()));
 app.put('/api/trust', async (req, res) => { setTrustRules(req.body || {}); await saveTrust(TRUST_FILE); res.json(getTrustRules()); });
 app.get('/api/settings', (_req, res) => res.json(uiSettings));
 app.put('/api/settings', async (req, res) => { uiSettings = { ...uiSettings, ...req.body }; await saveSettings(); res.json(uiSettings); });
+
+app.post('/api/suggestions', async (req, res) => {
+  const { lastAssistant } = req.body || {};
+  if (!lastAssistant || lastAssistant.length < 80 || uiSettings.suggestionsEnabled === 'false') return res.json({ suggestions: [] });
+  const region = uiSettings.suggestionsRegion || process.env.AWS_REGION || 'us-east-1';
+  const profile = uiSettings.suggestionsProfile || process.env.AWS_PROFILE || undefined;
+  const rawModelId = uiSettings.suggestionsModel || 'amazon.nova-lite-v1:0';
+  const modelId = rawModelId.includes('.') && !rawModelId.includes('/') && !rawModelId.startsWith('us.') && !rawModelId.startsWith('eu.') ? `us.${rawModelId}` : rawModelId;
+  const count = Number(uiSettings.suggestionsCount) || 3;
+  try {
+    const client = new BedrockRuntimeClient({ region, credentials: fromNodeProviderChain({ profile: profile || undefined }) });
+    const body = JSON.stringify({
+      messages: [{ role: 'user', content: [{ text: `You are a helpful assistant. Based on the following conversation, generate exactly ${count} follow-up questions or actions the user would likely want to do next. Each must be directly related to the specific content discussed, under 80 characters, and phrased as a request to an AI assistant.
+
+CONVERSATION:
+${lastAssistant.slice(0, 2000)}
+
+Respond with ONLY a JSON array of ${count} strings. No explanation, no markdown, just the array.` }] }],
+      inferenceConfig: { maxTokens: 200 }
+    });
+    const resp = await client.send(new InvokeModelCommand({ modelId, contentType: 'application/json', accept: 'application/json', body }));
+    const parsed = JSON.parse(new TextDecoder().decode(resp.body));
+    const text = parsed.output?.message?.content?.[0]?.text || parsed.content?.[0]?.text || '';
+    const match = text.match(/\[[\s\S]*\]/);
+    if (match) {
+      const suggestions = JSON.parse(match[0]);
+      if (Array.isArray(suggestions) && suggestions.every((s: any) => typeof s === 'string')) {
+        return res.json({ suggestions: suggestions.slice(0, count) });
+      }
+    }
+    res.json({ suggestions: [] });
+  } catch (e: any) {
+    console.error('[suggestions]', e.name, e.message);
+    res.json({ suggestions: [], error: `${e.name}: ${e.message}` });
+  }
+});
+
+app.post('/api/suggestions/test', async (_req, res) => {
+  const region = uiSettings.suggestionsRegion || process.env.AWS_REGION || 'us-east-1';
+  const profile = uiSettings.suggestionsProfile || process.env.AWS_PROFILE || undefined;
+  const rawModelId = uiSettings.suggestionsModel || 'amazon.nova-lite-v1:0';
+  const modelId = rawModelId.includes('.') && !rawModelId.includes('/') && !rawModelId.startsWith('us.') && !rawModelId.startsWith('eu.') ? `us.${rawModelId}` : rawModelId;
+  try {
+    const client = new BedrockRuntimeClient({ region, credentials: fromNodeProviderChain({ profile: profile || undefined }) });
+    const body = JSON.stringify({ messages: [{ role: 'user', content: [{ text: 'Say "ok"' }] }], inferenceConfig: { maxTokens: 10 } });
+    await client.send(new InvokeModelCommand({ modelId, contentType: 'application/json', accept: 'application/json', body }));
+    res.json({ ok: true, model: modelId });
+  } catch (e: any) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/suggestions/models', async (_req, res) => {
+  const region = uiSettings.suggestionsRegion || process.env.AWS_REGION || 'us-east-1';
+  const profile = uiSettings.suggestionsProfile || process.env.AWS_PROFILE || undefined;
+  try {
+    const client = new BedrockClient({ region, credentials: fromNodeProviderChain({ profile: profile || undefined }) });
+    const [fmResp, ipResp] = await Promise.all([
+      client.send(new ListFoundationModelsCommand({ byOutputModality: 'TEXT', byInferenceType: 'ON_DEMAND' })),
+      client.send(new ListInferenceProfilesCommand({}))
+    ]);
+    const fmModels = (fmResp.modelSummaries || [])
+      .filter(m => m.modelId)
+      .map(m => ({ id: m.modelId!, name: m.modelName || m.modelId!, group: 'Foundation Models' }));
+    const ipModels = (ipResp.inferenceProfileSummaries || [])
+      .filter(p => p.inferenceProfileId && p.status === 'ACTIVE')
+      .map(p => ({ id: p.inferenceProfileId!, name: p.inferenceProfileName || p.inferenceProfileId!, group: 'Inference Profiles' }));
+    const models = [...ipModels, ...fmModels].sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ models });
+  } catch (e: any) {
+    res.json({ models: [], error: e.message });
+  }
+});
+
 app.post('/api/pick-folder', async (req, res) => {
   const startPath = req.body?.startPath || homedir();
   if (!/^[a-zA-Z0-9 _\-./~:\\]+$/.test(startPath)) return res.json({ path: null });

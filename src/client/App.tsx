@@ -36,10 +36,13 @@ import { RewindTimeline } from './RewindTimeline';
 import { McpPanel } from './McpPanel';
 import { SettingsPage } from './SettingsPage';
 import { PanelMessage } from './PanelMessage';
-import type { TabState, Msg, ModesState, ModelsState, McpServer, McpTool, SlashCommand, SessionEntry, Toast, ProtocolLog, PendingImage, PendingFile, EditorType, CommandOption, PlanEntry } from './types';
+import type { TabState, Msg, ModesState, ModelsState, McpServer, McpTool, SlashCommand, SessionEntry, Toast, ProtocolLog, PendingImage, PendingFile, EditorType, CommandOption, PlanEntry, TabMetadata, GoalState } from './types';
 import { EDITOR_SCHEMES } from './types';
 
 marked.setOptions({ breaks: true });
+
+// Module-level stream accumulator for suggestions (outside React state)
+const streamAccumulator: Record<string, string[]> = {};
 
 function newTab(id: string, name: string): TabState {
   return { id, name, messages: [], thinking: null, permissions: [], isRunning: false, metadata: { contextUsagePercentage: 0 }, queue: [], stream: '', modes: null, models: null, permPolicy: 'ask' };
@@ -66,7 +69,6 @@ export function App() {
     if (d.editor) setEditor(d.editor);
     if (d.permPolicy) updateTab('tab-1', t => ({ ...t, permPolicy: d.permPolicy }));
     if (d.debugEnabled === 'true') setDebugEnabled(true);
-    if (d.queueEnabled === 'true') setQueueEnabled(true);
   }); }, []);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -74,12 +76,11 @@ export function App() {
   const [kiroSettings, setKiroSettings] = useState<Record<string, unknown> | null>(null);
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [protocolLogs, setProtocolLogs] = useState<ProtocolLog[]>([]);
-  const [queueEnabled, setQueueEnabled] = useState(false);
+
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [sessionFilter, setSessionFilter] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
-  const recognitionRef = useRef<any>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -98,7 +99,7 @@ export function App() {
   useEffect(() => { apiFetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ editor }) }); }, [editor]);
   useEffect(() => { apiFetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ permPolicy }) }); }, [permPolicy]);
   useEffect(() => { apiFetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ debugEnabled: String(debugEnabled) }) }); }, [debugEnabled]);
-  useEffect(() => { apiFetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ queueEnabled: String(queueEnabled) }) }); }, [queueEnabled]);
+
 
   const toastId = useRef(0);
   const seenMcpInits = useRef(new Set<string>());
@@ -131,6 +132,17 @@ export function App() {
           )};
         });
         setTimeout(() => { sendRef.current({ action: 'list_sessions', tabId: tid }); sendRef.current({ action: 'command_options', tabId: tid, command: 'effort', input: '' }); }, 500);
+        // Fetch suggestions for loaded sessions (no TurnEnd fires on load)
+        if (streamAccumulator[tid]?.length) {
+          const ctx = streamAccumulator[tid].join('');
+          delete streamAccumulator[tid];
+          if (ctx.length >= 40) {
+            apiFetch('/api/suggestions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lastAssistant: ctx.slice(0, 2000) }) })
+              .then(r => r.json())
+              .then((d: any) => { if (d.suggestions?.length) updateTab(tid, tb => ({ ...tb, suggestions: d.suggestions })); })
+              .catch(() => {});
+          }
+        }
         break;
       case 'UserMessageChunk':
         updateTab(tid, t => {
@@ -142,6 +154,8 @@ export function App() {
         });
         break;
       case 'AgentMessageChunk':
+        if (!streamAccumulator[tid]) streamAccumulator[tid] = [];
+        streamAccumulator[tid].push(data.text as string);
         updateTab(tid, t => {
           const stream = t.stream + (data.text as string);
           let msgs = t.messages.map(msg => msg.role === 'user-stream' ? { ...msg, role: 'user' } : msg);
@@ -187,32 +201,66 @@ export function App() {
       case 'PermissionRequest':
         updateTab(tid, t => ({ ...t, permissions: [...t.permissions, data as any] }));
         break;
-      case 'TurnEnd':
+      case 'TurnEnd': {
         updateTab(tid, t => {
           const msgs = t.messages.map(msg =>
             msg.role === 'assistant-stream' ? { ...msg, role: 'assistant' } :
             msg.role === 'user-stream' ? { ...msg, role: 'user' } : msg
           );
+          // Advance goal iteration
+          let goal = t.goal;
+          if (goal && goal.status === 'active') {
+            const next = goal.currentIteration + 1;
+            goal = next > goal.maxIterations ? { ...goal, currentIteration: goal.maxIterations, status: 'incomplete' as const } : { ...goal, currentIteration: next };
+          }
           if (t.queue.length) {
             const [next, ...rest] = t.queue;
             sendRef.current({ action: 'prompt', tabId: tid, text: next });
-            return { ...t, thinking: null, permissions: [], plan: undefined, messages: [...msgs, { role: 'user', text: next }], stream: '', queue: rest, lastStopReason: data.stopReason as string };
+            return { ...t, thinking: null, permissions: [], plan: undefined, messages: [...msgs, { role: 'user', text: next }], stream: '', queue: rest, lastStopReason: data.stopReason as string, suggestions: undefined, goal };
           }
-          return { ...t, thinking: null, permissions: [], plan: undefined, messages: msgs, stream: '', isRunning: false, lastStopReason: data.stopReason as string };
+          // Store context in module-level var as fallback for suggestions
+          if (!streamAccumulator[tid]?.length) {
+            const recent = msgs.filter(m => m.role === 'user' || m.role === 'assistant').slice(-6);
+            streamAccumulator[tid] = [recent.map(m => `${m.role === 'user' ? 'USER' : 'ASSISTANT'}: ${m.text.slice(0, 500)}`).join('\n')];
+          }
+          // If goal is still active and turn ends, mark complete (agent decided to stop)
+          if (goal && goal.status === 'active') goal = { ...goal, status: 'complete' };
+          return { ...t, thinking: null, permissions: [], plan: undefined, messages: msgs, stream: '', isRunning: false, lastStopReason: data.stopReason as string, suggestions: undefined, goal };
         });
+        // Fetch suggestions
+        const suggestionsContext = (streamAccumulator[tid] || []).join('');
+        delete streamAccumulator[tid];
+        if (suggestionsContext.length >= 40) {
+          apiFetch('/api/suggestions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lastAssistant: suggestionsContext.slice(0, 2000) }) })
+            .then(r => r.json())
+            .then((d: any) => { if (d.suggestions?.length) updateTab(tid, tb => ({ ...tb, suggestions: d.suggestions })); if (d.error) addToast(`Suggestions: ${d.error}`, 'warning'); })
+            .catch((e) => addToast(`Suggestions: ${e.message}`, 'warning'));
+        }
         loadSessions();
         if (document.hidden) {
           Notification.requestPermission().then(p => { if (p === 'granted') new Notification('Kiro', { body: 'Task completed', icon: '/favicon.ico' }); });
         }
         break;
+      }
       case 'CommandsAvailable':
         setCommands(data.commands as SlashCommand[]); setMcpServers((data.mcpServers as McpServer[]) || []); setAllTools((data.tools as McpTool[]) || []);
         break;
       case 'Metadata':
-        updateTab(tid, t => ({ ...t, metadata: { contextUsagePercentage: data.contextUsagePercentage as number, turnDurationMs: data.turnDurationMs as number | undefined } }));
+        updateTab(tid, t => {
+          const metering = data.meteringUsage as TabMetadata['meteringUsage'];
+          const prev = t.metadata.cumulativeUsage || { inputTokens: 0, outputTokens: 0, cost: 0 };
+          const cumulative = metering ? { inputTokens: prev.inputTokens + (metering.inputTokens || 0), outputTokens: prev.outputTokens + (metering.outputTokens || 0), cost: prev.cost + (metering.cost || 0) } : prev;
+          return { ...t, metadata: { contextUsagePercentage: data.contextUsagePercentage as number, turnDurationMs: data.turnDurationMs as number | undefined, meteringUsage: metering, cumulativeUsage: cumulative } };
+        });
         break;
       case 'Plan':
         updateTab(tid, t => ({ ...t, plan: data.entries as PlanEntry[] }));
+        break;
+      case 'GoalStatus':
+        updateTab(tid, t => {
+          if (!t.goal) return t;
+          return { ...t, goal: { ...t.goal, currentIteration: (data.currentIteration as number) || t.goal.currentIteration, maxIterations: (data.maxIterations as number) || t.goal.maxIterations, status: (data.status as GoalState['status']) || t.goal.status } };
+        });
         break;
       case 'SessionList': {
         const sessionList = (data.sessions as { value: string; label: string; description?: string }[]).map(s => ({ id: s.value, title: s.label, description: s.description }));
@@ -423,37 +471,14 @@ export function App() {
     const t = { ...newTab(tabId, title || 'Loading...'), isRunning: true, cwd: tab.cwd };
     setTabs(ts => [...ts, t]);
     setActiveTabId(tabId);
-    send({ action: 'new_tab', tabId });
     send({ action: 'load_session', tabId, sessionId: id });
   }
 
-  const speechSupported = typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
-  function startVoice() {
-    if (!speechSupported || recognitionRef.current) return;
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    const rec = new SR();
-    rec.continuous = false;
-    rec.interimResults = false;
-    rec.lang = '';
-    rec.onresult = (e: any) => {
-      const text = e.results[0]?.[0]?.transcript || '';
-      if (text) setInput(prev => prev ? prev + ' ' + text : text);
-    };
-    rec.onend = () => { recognitionRef.current = null; setIsRecording(false); };
-    rec.onerror = (e: any) => {
-      recognitionRef.current = null; setIsRecording(false);
-      if (e.error === 'network') addToast('Voice requires HTTPS or Electron app', 'warning');
-      else if (e.error === 'not-allowed') addToast('Microphone access denied', 'error');
-    };
-    try { rec.start(); } catch { return; }
-    recognitionRef.current = rec;
-    setIsRecording(true);
-  }
-
-  function stopVoice() {
-    if (recognitionRef.current) { recognitionRef.current.abort(); recognitionRef.current = null; }
-    setIsRecording(false);
+  function handleSendText(text: string) {
+    if (!text || tab.isRunning) return;
+    updateTab(activeTabId, t => ({ ...t, messages: [...t.messages, { role: 'user', text }], isRunning: true, stream: '', activeFiles: undefined, suggestions: undefined }));
+    send({ action: 'prompt', tabId: activeTabId, text });
   }
 
   function handleSend() {
@@ -464,13 +489,19 @@ export function App() {
       const panelCommands: Record<string, string> = { '/mcp': 'mcp', '/mcp list': 'mcp', '/tools': 'tools', '/context': 'context', '/context show': 'context', '/help': 'help' };
       const panelType = panelCommands[text];
       if (panelType) { updateTab(activeTabId, t => ({ ...t, messages: [...t.messages, { role: 'user', text }, { role: 'panel', text: '', panelType }] })); setInput(''); return; }
-      if (tab.isRunning && queueEnabled) { updateTab(activeTabId, t => ({ ...t, queue: [...t.queue, text] })); setInput(''); return; }
-      if (tab.isRunning) { setInput(''); return; }
+      if (tab.isRunning) { updateTab(activeTabId, t => ({ ...t, queue: [...t.queue, text] })); setInput(''); return; }
     } else {
-      if (tab.isRunning && queueEnabled) { updateTab(activeTabId, t => ({ ...t, queue: [...t.queue, text] })); setInput(''); return; }
-      if (tab.isRunning) { setInput(''); return; }
+      if (tab.isRunning) { updateTab(activeTabId, t => ({ ...t, queue: [...t.queue, text] })); setInput(''); return; }
     }
-    updateTab(activeTabId, t => ({ ...t, messages: [...t.messages, { role: 'user', text }], isRunning: true, stream: '', activeFiles: undefined }));
+    updateTab(activeTabId, t => {
+      let goal = t.goal;
+      if (text === '/goal clear') goal = null;
+      else if (text.startsWith('/goal ')) {
+        const match = text.match(/^\/goal\s+(?:--max\s+(\d+)\s+)?(.+)/s);
+        if (match) goal = { text: match[2].trim(), maxIterations: match[1] ? parseInt(match[1], 10) : 5, currentIteration: 1, status: 'active' };
+      }
+      return { ...t, messages: [...t.messages, { role: 'user', text }], isRunning: true, stream: '', activeFiles: undefined, suggestions: undefined, goal };
+    });
     send({ action: 'prompt', tabId: activeTabId, text, images: pendingImages.length ? pendingImages : undefined, files: pendingFiles.length ? pendingFiles : undefined });
     setInput(''); setPendingImages([]); setPendingFiles([]);
   }
@@ -662,6 +693,7 @@ export function App() {
           <option value="allow-all">◉ Allow all</option>
         </select>
         {tab.messages.length > 0 && <button className="export-btn" onClick={exportMarkdown} title="Export as Markdown"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>}
+        {tab.sessionId && <button className="session-id-btn" onClick={() => { navigator.clipboard.writeText(tab.sessionId!); addToast('Session ID copied — use: kiro-cli chat --resume-id ' + tab.sessionId, 'info'); }} title={`Session: ${tab.sessionId}\nClick to copy for: kiro-cli chat --resume-id`}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg><span>{tab.sessionId.slice(0, 8)}</span></button>}
       </div>
 
       {showSettings ? <SettingsPage editor={editor} setEditor={setEditor} onClose={() => setShowSettings(false)} send={send} kiroSettings={kiroSettings} debugEnabled={debugEnabled} setDebugEnabled={setDebugEnabled} /> : <>
@@ -714,9 +746,7 @@ export function App() {
               elements.push(
                 <div key={i} className={`message ${m.role.replace('-stream', '')}`}>
                   {(m.role === 'user' || m.role === 'user-stream' || m.role === 'system') ? m.text :
-                    /[─│┌┐└┘├┤┬┴┼█▓░═║╔╗╚╝╠╣╦╩╬]/.test(m.text)
-                      ? <pre className="terminal-output">{m.text}</pre>
-                      : <MemoMarkdown text={m.text} />}
+                    <MemoMarkdown text={m.text} />}
                   {!tab.isRunning && m.role !== 'system' && <MessageActions msg={m} idx={i} onRetry={retryMessage} onRewind={() => setShowRewind(true)} isLastUser={m.role === 'user' && !tab.messages.slice(i + 1).some(x => x.role === 'user')} canRetry={tab.lastStopReason !== undefined && tab.lastStopReason !== 'end_turn'} />}
                 </div>
               );
@@ -773,6 +803,18 @@ export function App() {
         </div>
       </div>}
       <div className="input-area">
+        {tab.suggestions && tab.suggestions.length > 0 && !tab.isRunning && <div className="suggestions">
+          {tab.suggestions.map((s, i) => (
+            <button key={i} className="suggestion-btn" onClick={() => handleSendText(s)}>{s}</button>
+          ))}
+        </div>}
+        {tab.goal && <div className={`goal-banner ${tab.goal.status}`}>
+          <span className="goal-icon">{tab.goal.status === 'complete' ? '✓' : tab.goal.status === 'incomplete' ? '⚠' : '⟳'}</span>
+          <span className="goal-label">{tab.goal.status === 'complete' ? 'Goal complete' : tab.goal.status === 'incomplete' ? `Goal incomplete (${tab.goal.currentIteration}/${tab.goal.maxIterations})` : `Iteration ${tab.goal.currentIteration}/${tab.goal.maxIterations}`}</span>
+          <span className="goal-text">{tab.goal.text.slice(0, 50)}{tab.goal.text.length > 50 ? '…' : ''}</span>
+          {tab.goal.status === 'active' && <button className="goal-cancel" onClick={() => { updateTab(activeTabId, t => ({ ...t, goal: null })); send({ action: 'prompt', tabId: activeTabId, text: '/goal clear' }); }}>Cancel</button>}
+          {tab.goal.status !== 'active' && <button className="goal-cancel" onClick={() => updateTab(activeTabId, t => ({ ...t, goal: null }))}>Dismiss</button>}
+        </div>}
         {tab.queue.length > 0 && <div className="queue-list">
           {tab.queue.map((q, i) => (
             <div key={i} className="queue-item">
@@ -797,6 +839,7 @@ export function App() {
           </svg>
           <span className="context-meter-label">{Math.round(tab.metadata.contextUsagePercentage)}%</span>
           {tab.metadata.contextUsagePercentage >= 50 && <button className="compact-btn" onClick={() => send({ action: 'prompt', tabId: activeTabId, text: '/compact' })} title="Compact context">⊘</button>}
+          {tab.metadata.cumulativeUsage && (tab.metadata.cumulativeUsage.inputTokens > 0 || tab.metadata.cumulativeUsage.outputTokens > 0) && <span className="metering-display" title={`In: ${tab.metadata.cumulativeUsage.inputTokens.toLocaleString()} · Out: ${tab.metadata.cumulativeUsage.outputTokens.toLocaleString()}${tab.metadata.cumulativeUsage.cost ? ` · $${tab.metadata.cumulativeUsage.cost.toFixed(4)}` : ''}`}>{((tab.metadata.cumulativeUsage.inputTokens + tab.metadata.cumulativeUsage.outputTokens) / 1000).toFixed(1)}k{tab.metadata.cumulativeUsage.cost ? ` · $${tab.metadata.cumulativeUsage.cost.toFixed(3)}` : ''}</span>}
         </div>}
         <div className="input-wrapper">
           {cmdFilter && <div className="cmd-popup">
@@ -819,8 +862,7 @@ export function App() {
           <textarea ref={textareaRef} value={input} onChange={e => handleInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Message Kiro... (/ for commands, ⌘T new tab, ⌘B sidebar)" rows={1} style={{ '--tab-color': `var(--ghost-${tabs.indexOf(tab) % 6})` } as React.CSSProperties} onPaste={e => { const items = e.clipboardData.items; for (const item of items) { if (item.type.startsWith('image/')) { const file = item.getAsFile(); if (file) { const reader = new FileReader(); reader.onload = () => { const b64 = (reader.result as string).split(',')[1]; setPendingImages(p => [...p, { data: b64, mimeType: file.type, name: file.name }]); }; reader.readAsDataURL(file); } } } }} />
           <div className="input-buttons">
             <label className="img-upload-btn" title="Attach image or file"><input type="file" accept="image/*,.txt,.md,.json,.ts,.tsx,.js,.jsx,.py,.rs,.go,.yaml,.yml,.toml,.csv,.xml,.html,.css,.sh,.sql,.log,.env,.cfg" multiple hidden onChange={e => { const files = e.target.files; if (!files) return; for (const file of files) { if (file.type.startsWith('image/')) { const reader = new FileReader(); reader.onload = () => { const b64 = (reader.result as string).split(',')[1]; setPendingImages(p => [...p, { data: b64, mimeType: file.type, name: file.name }]); }; reader.readAsDataURL(file); } else { const reader = new FileReader(); reader.onload = () => { setPendingFiles(p => [...p, { name: file.name, content: reader.result as string }]); }; reader.readAsText(file); } } e.target.value = ''; }} /><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></label>
-            <button className={`queue-toggle ${queueEnabled ? 'active' : ''}`} onClick={() => setQueueEnabled(q => !q)} title={queueEnabled ? 'Queue enabled' : 'Queue disabled'}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
-            {speechSupported && <button className={`mic-btn ${isRecording ? 'recording' : ''}`} onClick={isRecording ? stopVoice : startVoice} title={isRecording ? 'Click to stop' : 'Click to record'}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>}
+
             {tab.isRunning ? <button id="cancel-btn" onClick={() => send({ action: 'cancel', tabId: activeTabId })}><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
               : <button id="send-btn" disabled={(!input.trim() && !pendingImages.length && !pendingFiles.length) || !modes} onClick={handleSend}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>}
           </div>

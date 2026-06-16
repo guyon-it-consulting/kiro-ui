@@ -10,9 +10,10 @@ kiro-ui/
 │   ├── App.tsx              # Main app component (all UI logic)
 │   ├── apiFetch.ts          # Authenticated fetch wrapper (injects auth token)
 │   ├── useWebSocket.ts      # WebSocket hook with reconnection + token auth
-│   ├── SettingsPage.tsx     # Settings page (general, agent, permissions, limits, debug)
+│   ├── SettingsPage.tsx     # Settings page (general, agent, suggestions, permissions, limits, debug)
 │   ├── ToolBlock.tsx        # Tool call visualization component
 │   ├── ThinkingBlock.tsx    # Thinking/reasoning display
+│   ├── RewindTimeline.tsx   # Visual timeline picker for /rewind
 │   ├── McpPanel.tsx         # MCP server status panel
 │   ├── MessageActions.tsx   # Copy/retry actions on messages
 │   ├── PanelMessage.tsx     # Panel-type command results
@@ -55,6 +56,6 @@ Browser (React + Vite) ←→ WebSocket (token auth) ←→ server.ts ←→ @ag
 - Styles: CSS variables for theming (`[data-theme="dark"]` / `[data-theme="light"]`), no CSS-in-JS
 - State: React useState/useRef (no external state library)
 - Theme: dark by default, persisted in localStorage
-- Settings: persisted in `~/.kiro-ui/settings.json` (editor, workspace, permPolicy, limits, debug, queue)
+- Settings: persisted in `~/.kiro-ui/settings.json` (editor, workspace, permPolicy, limits, debug, queue, suggestions)
 - Trust: persisted in `~/.kiro-ui/trust.json`
 - All Kiro interactions go through ACP protocol, never direct file access

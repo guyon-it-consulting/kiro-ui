@@ -20,6 +20,18 @@ describe('PanelMessage', () => {
     expect(screen.getByText('3.5s')).toBeTruthy();
   });
 
+  it('renders context panel with metering data', () => {
+    const metadata = { contextUsagePercentage: 42, turnDurationMs: 3500, cumulativeUsage: { inputTokens: 15000, outputTokens: 5000, cost: 0.0234 } };
+    render(<PanelMessage type="context" metadata={metadata} modes={baseModes} commands={[]} mcpServers={[]} allTools={[]} />);
+    expect(screen.getByText('15,000 / 5,000')).toBeTruthy();
+    expect(screen.getByText('$0.0234')).toBeTruthy();
+  });
+
+  it('renders context panel without metering when not available', () => {
+    render(<PanelMessage type="context" metadata={baseMetadata} modes={baseModes} commands={[]} mcpServers={[]} allTools={[]} />);
+    expect(screen.queryByText(/\$/)).toBeNull();
+  });
+
   it('renders mcp panel with servers', () => {
     render(<PanelMessage type="mcp" metadata={baseMetadata} modes={baseModes} commands={[]} mcpServers={baseServers} allTools={baseTools} />);
     expect(screen.getByText('MCP Servers (1)')).toBeTruthy();

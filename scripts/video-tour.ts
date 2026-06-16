@@ -103,7 +103,6 @@ async function main() {
   await page.waitForTimeout(SHORT);
 
   // --- Scene 12: Message queue ---
-  await page.locator('.queue-toggle').click();
   await page.waitForTimeout(SHORT);
   await textarea.fill('First task');
   await textarea.press('Enter');
@@ -113,9 +112,8 @@ async function main() {
   await textarea.fill('Third task');
   await textarea.press('Enter');
   await page.waitForTimeout(SCENE);
-  // Clear and disable queue
+  // Clear queue
   await page.locator('.queue-clear').click().catch(() => {});
-  await page.locator('.queue-toggle').click();
   await page.locator('#send-btn').waitFor({ state: 'visible', timeout: 90000 }).catch(() => {});
   await page.waitForTimeout(SHORT);
 

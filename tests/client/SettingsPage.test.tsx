@@ -31,8 +31,9 @@ describe('SettingsPage', () => {
   it('renders section headings', () => {
     render(<SettingsPage {...baseProps} />);
     expect(screen.getByRole('heading', { name: 'General' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Permissions' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Trust Rules' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Limits' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Suggestions' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Advanced' })).toBeTruthy();
   });
 
@@ -41,9 +42,9 @@ describe('SettingsPage', () => {
     expect(screen.getByText('chat.diffTool')).toBeTruthy();
   });
 
-  it('renders empty kiro settings message', () => {
+  it('hides kiro settings section when empty', () => {
     render(<SettingsPage {...baseProps} kiroSettings={{}} />);
-    expect(screen.getByText('No configurable settings available.')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Kiro Agent Settings' })).toBeNull();
   });
 
   it('renders loading when kiroSettings is null', () => {

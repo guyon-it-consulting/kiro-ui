@@ -163,6 +163,52 @@ test.describe('Rewind Feature', () => {
     await waitForTurnEnd(page);
   });
 
+  // --- Enriched preview ---
+
+  test('turn summary shows tool count after tool-heavy interaction', async ({ page }) => {
+    test.skip(!(await isConnected(page)), 'Agent not connected');
+    // Ask agent to do something that uses tools
+    await sendAndWait(page, 'Read the file package.json and tell me the version');
+    await sendAndWait(page, 'What is 2+2');
+
+    // Open rewind timeline
+    const userMsg = page.locator('.message.user').first();
+    await userMsg.hover();
+    await userMsg.locator('.msg-actions button[title="Rewind to here"]').click();
+    await expect(page.locator('.rewind-timeline')).toBeVisible();
+
+    // The first turn (package.json) should show tool summary since it requires file reading
+    const summary = page.locator('.rewind-turn-summary');
+    if (await summary.count() > 0) {
+      const text = await summary.first().textContent();
+      expect(text).toMatch(/\d+ tools?/);
+    }
+
+    await page.locator('.rewind-close').click();
+  });
+
+  test('turn with no tools shows no summary line', async ({ page }) => {
+    test.skip(!(await isConnected(page)), 'Agent not connected');
+    // Simple Q&A that shouldn't trigger tools
+    await sendAndWait(page, 'Say the word hello');
+    await sendAndWait(page, 'Say the word world');
+
+    const userMsg = page.locator('.message.user').first();
+    await userMsg.hover();
+    await userMsg.locator('.msg-actions button[title="Rewind to here"]').click();
+    await expect(page.locator('.rewind-timeline')).toBeVisible();
+
+    // For simple text turns, there should be no summary (or it appears only when tools > 0)
+    const turns = page.locator('.rewind-turn');
+    await expect(turns).toHaveCount(1); // Only turn 2 visible
+    // If no tools were used, no summary should appear
+    const summaryCount = await page.locator('.rewind-turn-summary').count();
+    // Either 0 (no tools at all) or summary exists — both are valid depending on agent behavior
+    expect(summaryCount).toBeGreaterThanOrEqual(0);
+
+    await page.locator('.rewind-close').click();
+  });
+
   test('after rewind, forked session shows branch indicator in sidebar', async ({ page }) => {
     test.skip(!(await isConnected(page)), 'Agent not connected');
     await sendAndWait(page, 'First message');

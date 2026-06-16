@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newTab, handleTurnEnd, handleAgentChunk, handleToolCall, handleToolCallUpdate, handleThinking, groupConsecutiveTools } from '../../src/client/appLogic.js';
+import { newTab, handleTurnEnd, handleAgentChunk, handleToolCall, handleToolCallUpdate, handleThinking, groupConsecutiveTools, extractSuggestions, enqueueMessage, accumulateMetering, parseGoalCommand, handleGoalTurnEnd } from '../../src/client/appLogic.js';
 
 describe('newTab', () => {
   it('creates tab with defaults', () => {
@@ -193,5 +193,166 @@ describe('groupConsecutiveTools', () => {
 
   it('empty messages returns empty', () => {
     expect(groupConsecutiveTools([])).toEqual([]);
+  });
+});
+
+describe('extractSuggestions', () => {
+  it('extracts valid suggestions from end of text', () => {
+    const text = 'Here is my response.\n\n```suggestions\n["Option A", "Option B", "Option C"]\n```';
+    const result = extractSuggestions(text);
+    expect(result.clean).toBe('Here is my response.');
+    expect(result.suggestions).toEqual(['Option A', 'Option B', 'Option C']);
+  });
+
+  it('returns empty array when no suggestions block', () => {
+    const text = 'Just a normal response without suggestions.';
+    const result = extractSuggestions(text);
+    expect(result.clean).toBe(text);
+    expect(result.suggestions).toEqual([]);
+  });
+
+  it('returns empty array for malformed JSON', () => {
+    const text = 'Response\n\n```suggestions\nnot valid json\n```';
+    const result = extractSuggestions(text);
+    expect(result.clean).toBe(text);
+    expect(result.suggestions).toEqual([]);
+  });
+
+  it('limits to 5 suggestions', () => {
+    const text = 'Response\n\n```suggestions\n["1","2","3","4","5","6","7"]\n```';
+    const result = extractSuggestions(text);
+    expect(result.suggestions).toHaveLength(5);
+  });
+
+  it('ignores suggestions block not at end of text', () => {
+    const text = '```suggestions\n["A"]\n```\n\nMore text after.';
+    const result = extractSuggestions(text);
+    expect(result.clean).toBe(text);
+    expect(result.suggestions).toEqual([]);
+  });
+
+  it('handles trailing whitespace after block', () => {
+    const text = 'Response\n\n```suggestions\n["A", "B"]\n```\n';
+    const result = extractSuggestions(text);
+    expect(result.clean).toBe('Response');
+    expect(result.suggestions).toEqual(['A', 'B']);
+  });
+
+  it('rejects non-string arrays', () => {
+    const text = 'Response\n\n```suggestions\n[1, 2, 3]\n```';
+    const result = extractSuggestions(text);
+    expect(result.clean).toBe(text);
+    expect(result.suggestions).toEqual([]);
+  });
+});
+
+describe('enqueueMessage', () => {
+  it('queues message when tab is running', () => {
+    const tab = newTab('t1', 'T');
+    tab.isRunning = true;
+    const result = enqueueMessage(tab, 'queued text');
+    expect(result).not.toBeNull();
+    expect(result!.queue).toEqual(['queued text']);
+  });
+
+  it('returns null when tab is not running', () => {
+    const tab = newTab('t1', 'T');
+    tab.isRunning = false;
+    const result = enqueueMessage(tab, 'text');
+    expect(result).toBeNull();
+  });
+
+  it('appends to existing queue', () => {
+    const tab = newTab('t1', 'T');
+    tab.isRunning = true;
+    tab.queue = ['first'];
+    const result = enqueueMessage(tab, 'second');
+    expect(result!.queue).toEqual(['first', 'second']);
+  });
+});
+
+describe('accumulateMetering', () => {
+  it('initializes cumulative from first metering event', () => {
+    const tab = newTab('t1', 'T');
+    const result = accumulateMetering(tab, { inputTokens: 100, outputTokens: 50, cost: 0.001 });
+    expect(result.cumulativeUsage).toEqual({ inputTokens: 100, outputTokens: 50, cost: 0.001 });
+    expect(result.meteringUsage).toEqual({ inputTokens: 100, outputTokens: 50, cost: 0.001 });
+  });
+
+  it('accumulates across multiple turns', () => {
+    const tab = newTab('t1', 'T');
+    tab.metadata.cumulativeUsage = { inputTokens: 100, outputTokens: 50, cost: 0.001 };
+    const result = accumulateMetering(tab, { inputTokens: 200, outputTokens: 80, cost: 0.002 });
+    expect(result.cumulativeUsage).toEqual({ inputTokens: 300, outputTokens: 130, cost: 0.003 });
+  });
+
+  it('preserves cumulative when metering is undefined', () => {
+    const tab = newTab('t1', 'T');
+    tab.metadata.cumulativeUsage = { inputTokens: 500, outputTokens: 200, cost: 0.01 };
+    const result = accumulateMetering(tab, undefined);
+    expect(result.cumulativeUsage).toEqual({ inputTokens: 500, outputTokens: 200, cost: 0.01 });
+    expect(result.meteringUsage).toBeUndefined();
+  });
+
+  it('handles partial metering data (missing fields)', () => {
+    const tab = newTab('t1', 'T');
+    const result = accumulateMetering(tab, { inputTokens: 50 });
+    expect(result.cumulativeUsage).toEqual({ inputTokens: 50, outputTokens: 0, cost: 0 });
+  });
+});
+
+describe('parseGoalCommand', () => {
+  it('parses basic goal command', () => {
+    const result = parseGoalCommand('/goal refactor auth to use JWT');
+    expect(result).toEqual({ goalText: 'refactor auth to use JWT', maxIterations: 5 });
+  });
+
+  it('parses goal with --max flag', () => {
+    const result = parseGoalCommand('/goal --max 10 migrate to Vitest');
+    expect(result).toEqual({ goalText: 'migrate to Vitest', maxIterations: 10 });
+  });
+
+  it('returns null for /goal clear', () => {
+    expect(parseGoalCommand('/goal clear')).toBeNull();
+  });
+
+  it('returns null for bare /goal', () => {
+    expect(parseGoalCommand('/goal')).toBeNull();
+  });
+
+  it('returns null for non-goal command', () => {
+    expect(parseGoalCommand('/help')).toBeNull();
+  });
+});
+
+describe('handleGoalTurnEnd', () => {
+  it('advances iteration when goal is active', () => {
+    const tab = newTab('t1', 'T');
+    tab.goal = { text: 'test', maxIterations: 5, currentIteration: 2, status: 'active' };
+    const result = handleGoalTurnEnd(tab);
+    expect(result.goal!.currentIteration).toBe(3);
+    expect(result.goal!.status).toBe('active');
+  });
+
+  it('marks incomplete when reaching max iterations', () => {
+    const tab = newTab('t1', 'T');
+    tab.goal = { text: 'test', maxIterations: 5, currentIteration: 5, status: 'active' };
+    const result = handleGoalTurnEnd(tab);
+    expect(result.goal!.status).toBe('incomplete');
+    expect(result.goal!.currentIteration).toBe(5);
+  });
+
+  it('does nothing when no goal', () => {
+    const tab = newTab('t1', 'T');
+    const result = handleGoalTurnEnd(tab);
+    expect(result.goal).toBeUndefined();
+  });
+
+  it('does nothing when goal is already complete', () => {
+    const tab = newTab('t1', 'T');
+    tab.goal = { text: 'test', maxIterations: 5, currentIteration: 3, status: 'complete' };
+    const result = handleGoalTurnEnd(tab);
+    expect(result.goal!.currentIteration).toBe(3);
+    expect(result.goal!.status).toBe('complete');
   });
 });

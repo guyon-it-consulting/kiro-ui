@@ -60,3 +60,44 @@ export function groupConsecutiveTools(messages: Msg[]): { type: 'tool-group' | '
   }
   return groups;
 }
+
+const SUGGESTIONS_RE = /```suggestions\s*\n(\[[\s\S]*?\])\s*\n```\s*$/;
+
+export function extractSuggestions(text: string): { clean: string; suggestions: string[] } {
+  const match = text.match(SUGGESTIONS_RE);
+  if (!match) return { clean: text, suggestions: [] };
+  try {
+    const parsed = JSON.parse(match[1]);
+    if (Array.isArray(parsed) && parsed.every(s => typeof s === 'string')) {
+      return { clean: text.slice(0, match.index).trimEnd(), suggestions: parsed.slice(0, 5) };
+    }
+  } catch { /* ignore parse errors */ }
+  return { clean: text, suggestions: [] };
+}
+
+export function enqueueMessage(tab: TabState, text: string): TabState | null {
+  if (!tab.isRunning) return null;
+  return { ...tab, queue: [...tab.queue, text] };
+}
+
+export function accumulateMetering(tab: TabState, metering?: { inputTokens?: number; outputTokens?: number; cost?: number }): TabState['metadata'] {
+  const prev = tab.metadata.cumulativeUsage || { inputTokens: 0, outputTokens: 0, cost: 0 };
+  const cumulative = metering ? { inputTokens: prev.inputTokens + (metering.inputTokens || 0), outputTokens: prev.outputTokens + (metering.outputTokens || 0), cost: prev.cost + (metering.cost || 0) } : prev;
+  return { ...tab.metadata, meteringUsage: metering, cumulativeUsage: cumulative };
+}
+
+export function parseGoalCommand(text: string): { goalText: string; maxIterations: number } | null {
+  const match = text.match(/^\/goal\s+(?:--max\s+(\d+)\s+)?(.+)/s);
+  if (!match) return null;
+  if (text.trim() === '/goal clear') return null;
+  return { goalText: match[2].trim(), maxIterations: match[1] ? parseInt(match[1], 10) : 5 };
+}
+
+export function handleGoalTurnEnd(tab: TabState): TabState {
+  if (!tab.goal || tab.goal.status !== 'active') return tab;
+  const next = tab.goal.currentIteration + 1;
+  if (next > tab.goal.maxIterations) {
+    return { ...tab, goal: { ...tab.goal, currentIteration: tab.goal.maxIterations, status: 'incomplete' } };
+  }
+  return { ...tab, goal: { ...tab.goal, currentIteration: next } };
+}

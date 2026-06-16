@@ -100,6 +100,11 @@ describe('extNotification handler', () => {
     expect(emit).not.toHaveBeenCalled();
   });
 
+  it('goal/status emits GoalStatus', () => {
+    handleExtNotification('_kiro.dev/goal/status', { currentIteration: 3, maxIterations: 5, status: 'active' }, emit, 'tab-1');
+    expect(emit).toHaveBeenCalledWith({ type: 'GoalStatus', tabId: 'tab-1', currentIteration: 3, maxIterations: 5, status: 'active' });
+  });
+
   it('unknown method does nothing', () => {
     handleExtNotification('_kiro.dev/unknown', {}, emit, 'tab-1');
     expect(emit).toHaveBeenCalledWith({ type: 'ProtocolLog', tabId: 'tab-1', dir: 'in', msg: 'ext: _kiro.dev/unknown {}' });

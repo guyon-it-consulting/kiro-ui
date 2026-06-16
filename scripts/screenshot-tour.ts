@@ -118,9 +118,7 @@ async function main() {
   await page.waitForTimeout(SHORT);
 
   // 14 - Message queue (full showcase)
-  // First: enable queue, then send a long prompt so agent is busy
-  await page.locator('.queue-toggle').click();
-  await page.waitForTimeout(SHORT);
+  // Send a long prompt so agent is busy, then queue messages
   await textarea.fill('Write a detailed explanation of how WebSockets work in 5 paragraphs');
   await textarea.press('Enter');
   await page.waitForTimeout(1500); // Wait for agent to start running
@@ -142,9 +140,8 @@ async function main() {
   await page.waitForTimeout(SHORT);
   await shot(page, '14-queue-reorder.png');
 
-  // Clear queue and disable, wait for turn to end
+  // Clear queue, wait for turn to end
   await page.locator('.queue-clear').click().catch(() => {});
-  await page.locator('.queue-toggle').click();
   await waitDone(page);
   await page.waitForTimeout(SHORT);
 

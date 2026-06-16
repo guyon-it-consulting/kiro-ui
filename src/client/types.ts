@@ -56,6 +56,22 @@ export interface TabState {
   activeFiles?: { path: string; line?: number; kind?: string }[];
   suggestions?: string[];
   goal?: GoalState | null;
+  subagents?: Subagent[];
+  subagentActivity?: Record<string, SubagentActivity>;
+}
+
+export interface Subagent {
+  sessionId: string;
+  name: string;
+  role?: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  dependsOn?: string[];
+  loopIteration?: number;
+}
+
+export interface SubagentActivity {
+  event: string;
+  timestamp: number;
 }
 
 export interface GoalState {

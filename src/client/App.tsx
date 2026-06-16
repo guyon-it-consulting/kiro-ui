@@ -41,6 +41,8 @@ import { RewindTimeline } from './RewindTimeline';
 import { McpPanel } from './McpPanel';
 import { SubagentPanel } from './SubagentPanel';
 import { SettingsPage } from './SettingsPage';
+import { Sidebar } from './Sidebar';
+import { TabBar } from './TabBar';
 import { PanelMessage } from './PanelMessage';
 import type { TabState, McpServer, McpTool, SlashCommand, SessionEntry, Toast, ProtocolLog, PendingImage, PendingFile, EditorType, CommandOption } from './types';
 import { EDITOR_SCHEMES } from './types';
@@ -82,7 +84,7 @@ export function App() {
 
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
-  const [sessionFilter, setSessionFilter] = useState('');
+
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -337,37 +339,9 @@ export function App() {
     {toasts.length > 0 && <div className="toast-container">
       {toasts.map(t => <div key={t.id} className={`toast toast-${t.type}`}>{t.text}<button className="toast-close" onClick={() => setToasts(ts => ts.filter(x => x.id !== t.id))}>✕</button></div>)}
     </div>}
-    <aside className={`sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
-      <h2>
-        <button className="sidebar-toggle" onClick={() => setSidebarOpen(false)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-        Sessions
-        <button onClick={newChat}>+ New</button>
-      </h2>
-      <div className="sidebar-workspace" onClick={async () => {
-        let dir: string | null = null;
-        try { const res = await apiFetch('/api/pick-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ startPath: tab.cwd || '' }) }); if (res.ok) { const d = await res.json(); if (d.path) dir = d.path; } } catch { /* fall through */ }
-        if (!dir) dir = prompt('Workspace directory:', tab.cwd || '');
-        if (dir !== null) { updateTab(activeTabId, t => ({ ...t, cwd: dir || undefined })); send({ action: 'new_chat', tabId: activeTabId, cwd: dir || undefined }); }
-      }}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-        <span>{tab.cwd || '~/.kiro-ui/workspace'}</span>
-      </div>
-      <div className="sessions">
-        <input className="session-search" placeholder="Filter sessions..." value={sessionFilter} onChange={e => setSessionFilter(e.target.value)} />
-        {sessions.filter(s => s.title && (!sessionFilter || s.title.toLowerCase().includes(sessionFilter.toLowerCase()))).slice(0, 50).map(s => {
-          const isOpen = tabs.some(t => t.sessionId === s.id);
-          return (
-            <div key={s.id} className={`session-item ${isOpen ? 'open' : ''}`} onClick={() => loadSession(s.id, s.title)}>
-              {isOpen && <span className="session-dot" />}
-              <span className="session-title">{s.title}</span>
-            </div>
-          );
-        })}
-      </div>
-    </aside>
+    <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} onOpen={() => setSidebarOpen(true)} />
     <div className="main">
       <header>
-        {!sidebarOpen && <button className="sidebar-open-btn" onClick={() => setSidebarOpen(true)}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg></button>}
         <h1><span style={{color: 'var(--accent)'}}>Kiro</span></h1>
         <div className="selectors">
           <button className="theme-toggle" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')} title="Toggle theme">
@@ -381,18 +355,7 @@ export function App() {
         </div>
       </header>
 
-      <div className="tab-bar">
-        {tabs.map((t, idx) => (
-          <div key={t.id} className={`tab ${t.id === activeTabId ? 'active' : ''} ${t.isRunning ? 'running' : ''}`} onClick={() => dispatch({ type: 'SET_ACTIVE_TAB', tabId: t.id })}>
-            <span className={`tab-ghost ${t.isRunning ? 'floating' : t.id === activeTabId ? 'active-idle' : 'sleeping'}`} style={{ '--ghost-color': `var(--ghost-${idx % 6})` } as React.CSSProperties}>
-              <svg viewBox="0 0 24 24" fill="none"><path d="M7.5 16.5c-1.8 4-0.3 5.2 2.5 3.3 0.8 2.6 3.7 1.6 4.8 0 2.5-4.5 1.5-9.1 1.3-10 -1.8-6.4-10.7-6.4-12.2 0-0.4 1.1-0.4 2.4-0.6 3.7-0.1 0.7-0.2 1.1-0.4 1.8-0.2 0.4-0.4 0.8-0.7 1.4-0.5 0.9-0.3 2.8 2.3 1.8l0.2-0.1z" fill="currentColor" stroke="var(--ghost-color)" strokeWidth="1.5"/><ellipse cx="12.5" cy="9.5" rx="0.9" ry="1.3" fill="var(--surface)"/><ellipse cx="15.5" cy="9.5" rx="0.9" ry="1.3" fill="var(--surface)"/></svg>
-            </span>
-            <span className="tab-name">{t.name}</span>
-            {tabs.length > 1 && <button className="tab-close" onClick={e => { e.stopPropagation(); closeTab(t.id); }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>}
-          </div>
-        ))}
-        <button className="tab-add" onClick={addTab} title="New tab (⌘T)">+</button>
-      </div>
+      <TabBar />
 
       <div className="tab-config">
         {modes && <select value={modes.currentModeId} onChange={e => { send({ action: 'set_mode', tabId: activeTabId, modeId: e.target.value }); updateTab(activeTabId, t => ({ ...t, modes: { ...t.modes!, currentModeId: e.target.value } })); }}>

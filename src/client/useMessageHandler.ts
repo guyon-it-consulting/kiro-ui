@@ -61,7 +61,7 @@ export function useMessageHandler(deps: MessageHandlerDeps) {
             msg.role === 'user-stream' ? { ...msg, role: 'user' } : msg
           )};
         });
-        setTimeout(() => { sendRef.current({ action: 'list_sessions', tabId: tid }); sendRef.current({ action: 'command_options', tabId: tid, command: 'effort', input: '' }); }, 500);
+        setTimeout(() => { loadSessions(); sendRef.current({ action: 'command_options', tabId: tid, command: 'effort', input: '' }); }, 500);
         if (streamAccumulator[tid]?.length) {
           const ctx = streamAccumulator[tid].join('');
           delete streamAccumulator[tid];

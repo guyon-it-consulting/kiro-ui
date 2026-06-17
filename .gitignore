@@ -11,4 +11,3 @@ server.js
 # Compiled server files for Electron
 src/server/*.js
 .tour-workspace/
-docs/guide/tour.mp4

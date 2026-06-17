@@ -76,7 +76,7 @@ export function SettingsPage({ editor, setEditor, onClose, send, kiroSettings, d
               <td>
                 <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
                   <input className="settings-input" style={{width:'280px'}} value={workspace} onChange={e => setWorkspace(e.target.value)} placeholder="~/.kiro-ui/workspace" />
-                  <button className="settings-save-btn" onClick={() => apiFetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace }) })}>Save</button>
+                  <button className="settings-save-btn" onClick={(e) => { apiFetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace }) }).then(() => { (e.target as HTMLButtonElement).textContent = '✓ Saved'; setTimeout(() => { (e.target as HTMLButtonElement).textContent = 'Save'; }, 1500); }); }}>Save</button>
                 </div>
               </td>
             </tr>
@@ -122,7 +122,7 @@ export function SettingsPage({ editor, setEditor, onClose, send, kiroSettings, d
             </>)}
             <tr>
               <td></td>
-              <td><button className="settings-save-btn" onClick={() => apiFetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transport, acpCommand, tcpHost, tcpPort }) })}>Save transport</button></td>
+              <td><button className="settings-save-btn" onClick={(e) => { apiFetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transport, acpCommand, tcpHost, tcpPort }) }).then(() => { (e.target as HTMLButtonElement).textContent = '✓ Saved'; setTimeout(() => { (e.target as HTMLButtonElement).textContent = 'Save transport'; }, 1500); }); }}>Save transport</button></td>
             </tr>
           </tbody>
         </table>

@@ -43,6 +43,7 @@ export interface TabState {
   thinking: ThinkingState | null;
   permissions: PermissionRequest[];
   isRunning: boolean;
+  isConnecting?: boolean;
   metadata: TabMetadata;
   queue: string[];
   stream: string;

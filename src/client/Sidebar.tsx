@@ -18,7 +18,7 @@ export function Sidebar({ open, onClose, onOpen }: { open: boolean; onClose: () 
         let dir: string | null = null;
         try { const res = await apiFetch('/api/pick-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ startPath: tab.cwd || '' }) }); if (res.ok) { const d = await res.json(); if (d.path) dir = d.path; } } catch { /* fall through */ }
         if (!dir) dir = prompt('Workspace directory:', tab.cwd || '');
-        if (dir !== null) { updateTab(activeTabId, t => ({ ...t, cwd: dir || undefined })); send({ action: 'new_chat', tabId: activeTabId, cwd: dir || undefined }); }
+        if (dir !== null) { updateTab(activeTabId, t => ({ ...t, cwd: dir || undefined, isConnecting: true, messages: [] })); send({ action: 'new_chat', tabId: activeTabId, cwd: dir || undefined }); }
       }}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
         <span>{tab.cwd || '~/.kiro-ui/workspace'}</span>

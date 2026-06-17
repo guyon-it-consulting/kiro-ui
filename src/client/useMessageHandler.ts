@@ -56,7 +56,7 @@ export function useMessageHandler(deps: MessageHandlerDeps) {
           }
           const newModes = t.modes?.currentModeId ? { ...(data.modes as ModesState), currentModeId: t.modes.currentModeId } : data.modes as ModesState;
           const newModels = t.models?.currentModelId ? { ...(data.models as ModelsState), currentModelId: t.models.currentModelId } as any : data.models as ModelsState;
-          return { ...t, isRunning: false, stream: '', sessionId: data.sessionId as string, modes: newModes, models: newModels, messages: t.messages.map(msg =>
+          return { ...t, isRunning: false, isConnecting: false, stream: '', sessionId: data.sessionId as string, modes: newModes, models: newModels, messages: t.messages.map(msg =>
             msg.role === 'assistant-stream' ? { ...msg, role: 'assistant' } :
             msg.role === 'user-stream' ? { ...msg, role: 'user' } : msg
           )};

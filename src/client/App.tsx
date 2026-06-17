@@ -190,7 +190,7 @@ export function App() {
     if (existing) { dispatch({ type: 'SET_ACTIVE_TAB', tabId: existing.id }); return; }
     // Open in a new tab
     const tabId = `tab-${tabCounter + 1}`;
-    const t = { ...newTab(tabId, title || 'Loading...'), isRunning: true, cwd: tab.cwd };
+    const t = { ...newTab(tabId, title || 'Loading...'), isConnecting: true, cwd: tab.cwd };
     dispatch({ type: 'ADD_TAB', tab: t });
     send({ action: 'load_session', tabId, sessionId: id });
   }
@@ -311,7 +311,7 @@ export function App() {
 
   function addTab() {
     const id = `tab-${tabCounter + 1}`;
-    dispatch({ type: 'ADD_TAB', tab: { ...newTab(id, 'New Chat'), cwd: tab.cwd } });
+    dispatch({ type: 'ADD_TAB', tab: { ...newTab(id, 'New Chat'), isConnecting: true, cwd: tab.cwd } });
     send({ action: 'new_tab', tabId: id, cwd: tab.cwd });
   }
 
@@ -326,7 +326,7 @@ export function App() {
   const statusText = modes ? 'Connected' : status === 'connecting' ? 'Connecting...' : 'Disconnected';
   const statusClass = modes ? 'status connected' : 'status';
   const hasMessages = tab.messages.length > 0 || tab.thinking;
-  const isLoading = status === 'connecting' && !modes;
+  const isLoading = (status === 'connecting' && !modes) || tab.isConnecting;
 
   const ctx: AppContextValue = useMemo(() => ({
     tabs, activeTabId, tab, dispatch, updateTab, send,

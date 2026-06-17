@@ -1,4 +1,4 @@
-# Kiro UI v1.1 — Feature Guide
+# Kiro UI — Feature Guide
 
 A complete visual walkthrough of every feature.
 
@@ -24,7 +24,7 @@ Each tab has independent settings: agent, model, permission policy. Changes only
 
 ## 3. Effort Control
 
-Reasoning effort dropdown (low → max). Only appears when the current model supports it. Probed dynamically via `/effort`.
+Reasoning effort dropdown (low → max). Only appears when the current model supports it (e.g., Claude). Probed dynamically.
 
 ![Effort control](03-effort-control.png)
 
@@ -62,9 +62,9 @@ Shell commands stream output line-by-line as they execute. Green terminal text i
 
 ---
 
-## 8. Context Usage Meter
+## 8. Context & Metering
 
-Pie chart shows context window consumption. At 50%+, compact button (⊘) appears to run `/compact`.
+Pie chart shows context window consumption. Cumulative token usage and cost displayed inline. At 50%+, compact button (⊘) appears.
 
 ![Context meter](08-context-meter.png)
 
@@ -80,7 +80,7 @@ Hover any message: **Copy** on all, **Rewind** on user messages, **Retry** on fa
 
 ## 10. Rewind — Conversation Branching
 
-Timeline picker shows all turns (newest-first, turn 1 excluded). Click to branch via `/rewind N`. Keeps messages up to that turn.
+Timeline picker shows all turns with enriched summaries (tool count, files touched, commands run). Click to branch.
 
 ![Rewind timeline](10-rewind-timeline.png)
 
@@ -96,73 +96,71 @@ Each tab = one session. Independent agent, model, permissions. Tab names auto-sy
 
 ## 12. Slash Commands
 
-Type `/` for autocomplete. Dynamic subcommand options fetched from agent. Includes `/rewind`, `/effort`, `/compact`, `/mcp`.
+Type `/` for autocomplete. Dynamic subcommand options fetched from agent. Includes `/rewind`, `/effort`, `/compact`, `/mcp`, `/goal`.
 
 ![Slash commands](12-slash-commands.png)
 
 ---
 
-## 13. Message Queue — Stacking
+## 13. Message Queue
 
-Enable queue (layers icon). Type messages while agent is working — they stack up with edit/delete controls.
+Always-on when agent is running. Messages stack with reorder (↑↓), merge (⊕), edit, delete, clear all, and Send Now.
 
 ![Queue messages](13-queue-messages.png)
 
 ---
 
-## 14. Message Queue — Reorder & Merge
+## 14. Goal Iterations
 
-Reorder with ↑↓ arrows. Merge adjacent messages with ⊕. Clear all or Send Now to interrupt current turn.
+`/goal` command starts an iterative agent loop. Banner shows iteration progress (e.g., "2/5"), goal text, and cancel button.
 
-![Queue reorder](14-queue-reorder.png)
-
----
-
-## 15. Chat Export
-
-Download button (↓) exports the conversation as a formatted `.md` file named after the session.
-
-![Export](15-export.png)
+![Goal banner](14-goal-banner.png)
 
 ---
 
-## 16. Voice Input
+## 15. Session History
 
-Microphone button for speech-to-text (Web Speech API). Toggle mode: click to start, click to stop. Requires HTTPS or Electron.
+Workspace-scoped. Open sessions marked with dot. Title filter for search. Click to load in current tab.
 
-![Voice input](16-voice-input.png)
+![Session history](15-session-history.png)
 
 ---
 
-## 17. Keyboard Shortcuts
+## 16. Keyboard Shortcuts
 
 ⌘N new chat, ⌘T new tab, ⌘B toggle sidebar, ⌘L clear, Escape cancel.
 
-![Sidebar collapsed](17-sidebar-collapsed.png)
+![Sidebar collapsed](16-sidebar-collapsed.png)
 
 ---
 
-## 18. Session History
-
-Workspace-scoped. Open sessions marked with purple dot (●). Title filter for search. Click to open in new tab.
-
-![Session history](18-session-history.png)
-
----
-
-## 19. Light Theme
+## 17. Light Theme
 
 Sun/moon toggle. Persists across sessions and reloads.
 
-![Light theme](19-light-theme.png)
+![Light theme](17-light-theme.png)
 
 ---
 
-## 20. Settings
+## 18. Settings
 
-Editor integration (VS Code, Cursor, IntelliJ), protocol debug panel, workspace config, agent settings.
+Editor integration (VS Code, Cursor, IntelliJ), workspace, suggestions config, permissions, limits, protocol debug.
 
-![Settings](20-settings.png)
+![Settings](18-settings.png)
+
+---
+
+## 19. Follow-Up Suggestions
+
+AI-generated next actions appear as clickable chips after each response. Configurable model, count, and AWS profile.
+
+---
+
+## 20. Chat Export
+
+Download button exports the conversation as a formatted `.md` file named after the session.
+
+![Export](20-export.png)
 
 ---
 
@@ -171,10 +169,10 @@ Editor integration (VS Code, Cursor, IntelliJ), protocol debug panel, workspace 
 | Feature | Description |
 |---------|-------------|
 | Agent Plan | Live task list (○ pending, ▶ in-progress, ✓ completed) during multi-step tasks |
-| MCP Server Panel | Status dots, tool lists, OAuth authentication flow with persistent banner |
-| Permission Prompts | Interactive allow/deny buttons in "Ask" mode |
-| Retry on Failure | Retry button on last message when turn fails (cancelled/error/max_tokens) |
-| Protocol Debug | Raw JSON-RPC traffic + extension notification logging |
+| Subagent Pipelines | Visual panel tracking multi-agent orchestration with stage status |
+| MCP Server Panel | Status dots, tool lists, OAuth authentication flow |
+| Permission Prompts | Interactive allow/deny with persistent trust rules |
 | Crash Auto-Reconnect | Detects dead agent, auto-restarts within 1 second |
 | TCP Transport | Connect to remote `kiro-cli acp` over TCP (for Docker/remote) |
-| Electron Desktop | Native macOS/Windows/Linux app with voice support |
+| Electron Desktop | Native macOS/Windows/Linux app |
+| Protocol Debug | Raw JSON-RPC traffic inspection when enabled |

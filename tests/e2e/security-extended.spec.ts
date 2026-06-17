@@ -88,6 +88,8 @@ test.describe('Security & Resilience (Extended)', () => {
       const res = await request.put('/api/settings', { ...opts, data: { workspace: v } });
       expect(res.status()).toBeLessThan(500);
     }
+    // Restore workspace to prevent polluting settings
+    await request.put('/api/settings', { ...opts, data: { workspace: '' } });
   });
 
   test('large payload does not crash server', async ({ request }) => {

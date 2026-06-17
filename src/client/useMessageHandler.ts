@@ -55,7 +55,7 @@ export function useMessageHandler(deps: MessageHandlerDeps) {
             setTimeout(() => sendRef.current({ action: 'set_permission_policy', tabId: tid, policy: t.permPolicy }), 100);
           }
           const newModes = t.modes?.currentModeId ? { ...(data.modes as ModesState), currentModeId: t.modes.currentModeId } : data.modes as ModesState;
-          const newModels = t.models?.currentModelId ? { ...(data.modes as ModesState), currentModelId: t.models.currentModelId } as any : data.models as ModelsState;
+          const newModels = t.models?.currentModelId ? { ...(data.models as ModelsState), currentModelId: t.models.currentModelId } as any : data.models as ModelsState;
           return { ...t, isRunning: false, stream: '', sessionId: data.sessionId as string, modes: newModes, models: newModels, messages: t.messages.map(msg =>
             msg.role === 'assistant-stream' ? { ...msg, role: 'assistant' } :
             msg.role === 'user-stream' ? { ...msg, role: 'user' } : msg
